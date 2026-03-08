@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=SnazzGit
+Comment=A snazzy cross-platform Git GUI client
+Exec=snazzgit %U
+Icon=snazzgit
+Terminal=false
+Type=Application
+Categories=Development;RevisionControl;
