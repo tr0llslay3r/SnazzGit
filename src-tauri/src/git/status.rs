@@ -110,7 +110,7 @@ pub fn stage_file(path: &str, file_path: &str) -> Result<(), GitError> {
 pub fn unstage_file(path: &str, file_path: &str) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
     let head_commit = repo.head()?.peel_to_commit()?;
-    repo.reset_default(Some(head_commit.as_object()), &[file_path])?;
+    repo.reset_default(Some(head_commit.as_object()), [file_path])?;
     Ok(())
 }
 
@@ -125,7 +125,7 @@ pub fn stage_all(path: &str) -> Result<(), GitError> {
 pub fn unstage_all(path: &str) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
     let head_commit = repo.head()?.peel_to_commit()?;
-    repo.reset_default(Some(head_commit.as_object()), &["*"])?;
+    repo.reset_default(Some(head_commit.as_object()), ["*"])?;
     Ok(())
 }
 
