@@ -35,6 +35,27 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "shortDescription": "A snazzy cross-platform Git GUI client",
+    "longDescription": "SnazzGit is a cross-platform Git GUI client built with Tauri, featuring commit graph visualization, syntax-highlighted diffs, and a customizable theme system.",
+    "category": "Development",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libglib2.0-0"
+        ],
+        "section": "devel",
+        "priority": "optional"
+      },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "glib2"
+        ]
+      }
+    }
   }
 }

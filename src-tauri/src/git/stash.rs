@@ -4,9 +4,8 @@ use super::error::GitError;
 use super::types::StashEntry;
 
 pub fn stash_list(path: &str) -> Result<Vec<StashEntry>, GitError> {
-    let repo = Repository::open(path)?;
+    let mut repo = Repository::open(path)?;
     let mut entries = Vec::new();
-    let mut repo = repo;
     repo.stash_foreach(|index, message, oid| {
         entries.push(StashEntry {
             index,
@@ -19,8 +18,7 @@ pub fn stash_list(path: &str) -> Result<Vec<StashEntry>, GitError> {
 }
 
 pub fn stash_save(path: &str, message: &str) -> Result<(), GitError> {
-    let repo = Repository::open(path)?;
-    let mut repo = repo;
+    let mut repo = Repository::open(path)?;
     let sig = repo.signature()?;
     let msg = if message.is_empty() {
         None
@@ -32,8 +30,7 @@ pub fn stash_save(path: &str, message: &str) -> Result<(), GitError> {
 }
 
 pub fn stash_pop(path: &str, index: usize) -> Result<(), GitError> {
-    let repo = Repository::open(path)?;
-    let mut repo = repo;
+    let mut repo = Repository::open(path)?;
     repo.stash_pop(index, None)?;
     Ok(())
 }
@@ -45,8 +42,7 @@ pub fn stash_apply(path: &str, index: usize) -> Result<(), GitError> {
 }
 
 pub fn stash_drop(path: &str, index: usize) -> Result<(), GitError> {
-    let repo = Repository::open(path)?;
-    let mut repo = repo;
+    let mut repo = Repository::open(path)?;
     repo.stash_drop(index)?;
     Ok(())
 }

@@ -5,7 +5,8 @@ fn main() {
     // Fix WebKitGTK crash on Wayland compositors
     #[cfg(target_os = "linux")]
     {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        // SAFETY: Called before any threads are spawned in main()
+        unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
     }
 
     snazzgit_lib::run();

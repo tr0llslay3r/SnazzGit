@@ -21,11 +21,9 @@ pub fn load_commits(
 
     // Also push all branch tips so we see all branches
     if let Ok(branches) = repo.branches(Some(git2::BranchType::Local)) {
-        for branch_result in branches {
-            if let Ok((branch, _)) = branch_result {
-                if let Some(oid) = branch.get().target() {
-                    let _ = revwalk.push(oid);
-                }
+        for (branch, _) in branches.flatten() {
+            if let Some(oid) = branch.get().target() {
+                let _ = revwalk.push(oid);
             }
         }
     }
@@ -114,21 +112,19 @@ fn build_ref_map(repo: &Repository) -> Result<HashMap<Oid, Vec<RefInfo>>, GitErr
 
     // Branches
     if let Ok(branches) = repo.branches(None) {
-        for branch_result in branches {
-            if let Ok((branch, branch_type)) = branch_result {
-                if let (Some(name), Some(oid)) = (
-                    branch.name().ok().flatten(),
-                    branch.get().target(),
-                ) {
-                    let ref_type = match branch_type {
-                        git2::BranchType::Local => RefType::LocalBranch,
-                        git2::BranchType::Remote => RefType::RemoteBranch,
-                    };
-                    map.entry(oid).or_default().push(RefInfo {
-                        name: name.to_string(),
-                        ref_type,
-                    });
-                }
+        for (branch, branch_type) in branches.flatten() {
+            if let (Some(name), Some(oid)) = (
+                branch.name().ok().flatten(),
+                branch.get().target(),
+            ) {
+                let ref_type = match branch_type {
+                    git2::BranchType::Local => RefType::LocalBranch,
+                    git2::BranchType::Remote => RefType::RemoteBranch,
+                };
+                map.entry(oid).or_default().push(RefInfo {
+                    name: name.to_string(),
+                    ref_type,
+                });
             }
         }
     }

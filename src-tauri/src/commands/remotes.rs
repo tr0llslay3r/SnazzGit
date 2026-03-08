@@ -7,8 +7,7 @@ pub async fn fetch_remote(
     path: String,
     remote_name: String,
 ) -> Result<(), String> {
-    let handle = app.clone();
-    tokio::task::spawn_blocking(move || remote::fetch_remote(&path, &remote_name, Some(&handle)))
+    tokio::task::spawn_blocking(move || remote::fetch_remote(&path, &remote_name, Some(&app)))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -20,8 +19,7 @@ pub async fn pull(
     path: String,
     remote_name: String,
 ) -> Result<String, String> {
-    let handle = app.clone();
-    tokio::task::spawn_blocking(move || remote::pull(&path, &remote_name, Some(&handle)))
+    tokio::task::spawn_blocking(move || remote::pull(&path, &remote_name, Some(&app)))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -33,8 +31,7 @@ pub async fn push(
     path: String,
     remote_name: String,
 ) -> Result<(), String> {
-    let handle = app.clone();
-    tokio::task::spawn_blocking(move || remote::push(&path, &remote_name, Some(&handle)))
+    tokio::task::spawn_blocking(move || remote::push(&path, &remote_name, Some(&app)))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())

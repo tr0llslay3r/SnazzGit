@@ -69,12 +69,10 @@ pub fn compute_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
                 } else {
                     EdgeType::ForkLeft
                 }
+            } else if parent_idx == 0 {
+                EdgeType::MergeRight
             } else {
-                if parent_idx == 0 {
-                    EdgeType::MergeRight
-                } else {
-                    EdgeType::ForkRight
-                }
+                EdgeType::ForkRight
             };
 
             edges.push(GraphEdge {
