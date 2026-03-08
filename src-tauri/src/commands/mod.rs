@@ -1,0 +1,11 @@
+pub mod blame;
+pub mod branches;
+pub mod commits;
+pub mod diff;
+pub mod recent;
+pub mod remotes;
+pub mod repo;
+pub mod search;
+pub mod stash;
+pub mod status;
+pub mod theme;
