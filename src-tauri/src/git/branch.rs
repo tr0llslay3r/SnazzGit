@@ -4,11 +4,8 @@ use super::error::GitError;
 
 pub fn create_branch(path: &str, name: &str, from_head: bool) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
-    let commit = if from_head {
-        repo.head()?.peel_to_commit()?
-    } else {
-        repo.head()?.peel_to_commit()?
-    };
+    let _ = from_head; // TODO: support creating branch from non-HEAD commit
+    let commit = repo.head()?.peel_to_commit()?;
     repo.branch(name, &commit, false)?;
     Ok(())
 }

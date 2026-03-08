@@ -38,10 +38,6 @@ pub fn get_commit_diff(path: &str, commit_id: &str, file_path: Option<&str>) -> 
     let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))?;
 
     let mut files = Vec::new();
-    let deltas: Vec<_> = (0..diff.deltas().len()).collect();
-    for _idx in &deltas {
-        // We'll parse the whole diff at once
-    }
 
     // Parse all files from diff
     let mut current_file: Option<DiffFile> = None;
