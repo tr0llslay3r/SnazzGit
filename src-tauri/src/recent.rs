@@ -24,9 +24,8 @@ fn config_file() -> Option<PathBuf> {
 }
 
 pub fn load_recent_repos() -> Result<Vec<RecentRepo>, GitError> {
-    let path = match config_file() {
-        Some(p) => p,
-        None => return Ok(Vec::new()),
+    let Some(path) = config_file() else {
+        return Ok(Vec::new());
     };
 
     if !path.exists() {

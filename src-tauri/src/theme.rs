@@ -17,9 +17,8 @@ fn themes_dir() -> Option<PathBuf> {
 }
 
 pub fn load_user_themes() -> Result<Vec<Theme>, GitError> {
-    let dir = match themes_dir() {
-        Some(d) => d,
-        None => return Ok(Vec::new()),
+    let Some(dir) = themes_dir() else {
+        return Ok(Vec::new());
     };
 
     if !dir.exists() {
@@ -30,7 +29,7 @@ pub fn load_user_themes() -> Result<Vec<Theme>, GitError> {
     for entry in fs::read_dir(&dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().map_or(false, |e| e == "json") {
+        if path.extension().is_some_and(|e| e == "json") {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(theme) = serde_json::from_str::<Theme>(&content) {
                     themes.push(theme);
