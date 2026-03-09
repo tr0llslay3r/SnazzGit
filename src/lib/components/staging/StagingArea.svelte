@@ -10,6 +10,7 @@
   let unstagedRatio = $state(50);
   let dragging = $state(false);
   let containerEl: HTMLDivElement | undefined = $state();
+  let selectedUnstagedPaths = $state<Set<string>>(new Set());
 
   function onDividerDrag(e: MouseEvent) {
     e.preventDefault();
@@ -83,6 +84,35 @@
     }
   }
 
+  async function discardSelectedFiles() {
+    if (!$repoInfo || !$workingStatus) return;
+    const unstagedPathSet = new Set($workingStatus.unstaged.map((f) => f.path));
+    const discardable = [...selectedUnstagedPaths].filter((p) => unstagedPathSet.has(p));
+    if (discardable.length === 0) return;
+    try {
+      await Promise.all(discardable.map((fp) => tauri.discardFile($repoInfo!.path, fp)));
+      $workingStatus = await tauri.getStatus($repoInfo.path);
+      selectedUnstagedPaths = new Set();
+    } catch (e) {
+      addToast(`Failed to discard: ${e}`, 'error');
+    }
+  }
+
+  function selectAllUnstaged() {
+    if (!$workingStatus) return;
+    selectedUnstagedPaths = new Set([
+      ...$workingStatus.unstaged.map((f) => f.path),
+      ...$workingStatus.untracked,
+    ]);
+  }
+
+  function onUnstagedKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+      e.preventDefault();
+      selectAllUnstaged();
+    }
+  }
+
   async function doCommit() {
     if (!$repoInfo || !commitMessage.trim()) return;
     try {
@@ -135,6 +165,17 @@
   }
 
   function onUnstagedContext(filePath: string, status: string, e: MouseEvent) {
+    if (selectedUnstagedPaths.size > 1 && selectedUnstagedPaths.has(filePath)) {
+      const unstagedPathSet = new Set($workingStatus?.unstaged.map((f) => f.path) ?? []);
+      const discardableCount = [...selectedUnstagedPaths].filter((p) => unstagedPathSet.has(p)).length;
+      const items: ContextMenuEntry[] = [];
+      if (discardableCount > 0) {
+        items.push({ label: `Discard Changes (${discardableCount} files)`, danger: true, action: discardSelectedFiles });
+      }
+      showContextMenu(e.clientX, e.clientY, items);
+      return;
+    }
+
     const items: ContextMenuEntry[] = [
       { label: 'Stage', action: () => stage(filePath) },
     ];
@@ -167,7 +208,8 @@
 
 <div class="staging-area" bind:this={containerEl}>
   {#if $workingStatus}
-    <div class="staging-section" style="flex: {unstagedRatio}">
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="staging-section" style="flex: {unstagedRatio}" onkeydown={onUnstagedKeydown} role="region">
       <div class="staging-header">
         <span>Unstaged Changes ({$workingStatus.unstaged.length + $workingStatus.untracked.length})</span>
         <button class="staging-action" onclick={stageAllFiles} title="Stage all">+All</button>
@@ -177,8 +219,8 @@
           <FileEntry
             path={file.path}
             status={file.status}
-            selected={$selectedFile === file.path && !$selectedFileStaged}
-            onSelect={() => { $selectedFile = file.path; $selectedFileStaged = false; }}
+            selected={($selectedFile === file.path && !$selectedFileStaged) || selectedUnstagedPaths.has(file.path)}
+            onSelect={() => { $selectedFile = file.path; $selectedFileStaged = false; selectedUnstagedPaths = new Set(); }}
             onAction={() => stage(file.path)}
             actionLabel="Stage"
             actionIcon="+"
@@ -189,8 +231,8 @@
           <FileEntry
             {path}
             status="untracked"
-            selected={$selectedFile === path && !$selectedFileStaged}
-            onSelect={() => { $selectedFile = path; $selectedFileStaged = false; }}
+            selected={($selectedFile === path && !$selectedFileStaged) || selectedUnstagedPaths.has(path)}
+            onSelect={() => { $selectedFile = path; $selectedFileStaged = false; selectedUnstagedPaths = new Set(); }}
             onAction={() => stage(path)}
             actionLabel="Stage"
             actionIcon="+"
