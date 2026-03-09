@@ -90,6 +90,9 @@ export const unstageAll = (path: string) =>
 export const discardFile = (path: string, filePath: string) =>
   invoke<void>('discard_file', { path, filePath });
 
+export const deleteFile = (path: string, filePath: string) =>
+  invoke<void>('delete_file', { path, filePath });
+
 export const addToGitignore = (path: string, pattern: string) =>
   invoke<void>('add_to_gitignore', { path, pattern });
 

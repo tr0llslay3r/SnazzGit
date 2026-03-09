@@ -98,6 +98,30 @@
     }
   }
 
+  async function deleteFileFromDisk(filePath: string) {
+    if (!$repoInfo) return;
+    try {
+      await tauri.deleteFile($repoInfo.path, filePath);
+      $workingStatus = await tauri.getStatus($repoInfo.path);
+    } catch (e) {
+      addToast(`Failed to delete: ${e}`, 'error');
+    }
+  }
+
+  async function deleteSelectedUntrackedFiles() {
+    if (!$repoInfo || !$workingStatus) return;
+    const untrackedPathSet = new Set($workingStatus.untracked);
+    const deletable = [...selectedUnstagedPaths].filter((p) => untrackedPathSet.has(p));
+    if (deletable.length === 0) return;
+    try {
+      await Promise.all(deletable.map((fp) => tauri.deleteFile($repoInfo!.path, fp)));
+      $workingStatus = await tauri.getStatus($repoInfo.path);
+      selectedUnstagedPaths = new Set();
+    } catch (e) {
+      addToast(`Failed to delete: ${e}`, 'error');
+    }
+  }
+
   function selectAllUnstaged() {
     if (!$workingStatus) return;
     selectedUnstagedPaths = new Set([
@@ -167,10 +191,15 @@
   function onUnstagedContext(filePath: string, status: string, e: MouseEvent) {
     if (selectedUnstagedPaths.size > 1 && selectedUnstagedPaths.has(filePath)) {
       const unstagedPathSet = new Set($workingStatus?.unstaged.map((f) => f.path) ?? []);
+      const untrackedPathSet = new Set($workingStatus?.untracked ?? []);
       const discardableCount = [...selectedUnstagedPaths].filter((p) => unstagedPathSet.has(p)).length;
+      const deletableCount = [...selectedUnstagedPaths].filter((p) => untrackedPathSet.has(p)).length;
       const items: ContextMenuEntry[] = [];
       if (discardableCount > 0) {
         items.push({ label: `Discard Changes (${discardableCount} files)`, danger: true, action: discardSelectedFiles });
+      }
+      if (deletableCount > 0) {
+        items.push({ label: `Remove ${deletableCount} new file${deletableCount > 1 ? 's' : ''}`, danger: true, action: deleteSelectedUntrackedFiles });
       }
       showContextMenu(e.clientX, e.clientY, items);
       return;
@@ -181,6 +210,8 @@
     ];
     if (status !== 'untracked' && status !== 'New') {
       items.push({ label: 'Discard Changes', danger: true, action: () => discardFileChanges(filePath) });
+    } else {
+      items.push({ label: 'Remove file', danger: true, action: () => deleteFileFromDisk(filePath) });
     }
     items.push({ separator: true });
     items.push(...getIgnoreItems(filePath));

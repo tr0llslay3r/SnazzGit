@@ -51,6 +51,7 @@ pub fn run() {
             status::stage_all,
             status::unstage_all,
             status::discard_file,
+            status::delete_file,
             status::add_to_gitignore,
             // Stash
             stash::stash_list,

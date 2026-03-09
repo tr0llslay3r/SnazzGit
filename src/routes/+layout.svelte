@@ -38,6 +38,13 @@
       e.preventDefault();
       $showBranchDialog = !$showBranchDialog;
     }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+      const target = e.target as HTMLElement;
+      const isEditable = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      if (!isEditable) {
+        e.preventDefault();
+      }
+    }
   }
 </script>
 

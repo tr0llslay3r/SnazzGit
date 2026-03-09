@@ -137,6 +137,12 @@ pub fn discard_file(path: &str, file_path: &str) -> Result<(), GitError> {
     Ok(())
 }
 
+pub fn delete_file(repo_path: &str, file_path: &str) -> Result<(), GitError> {
+    let full_path = Path::new(repo_path).join(file_path);
+    std::fs::remove_file(&full_path)?;
+    Ok(())
+}
+
 pub fn add_to_gitignore(repo_path: &str, pattern: &str) -> Result<(), GitError> {
     let gitignore_path = Path::new(repo_path).join(".gitignore");
 
