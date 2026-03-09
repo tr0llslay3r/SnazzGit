@@ -12,11 +12,12 @@
   interface Props {
     nodes: TreeNode[];
     onSelect?: (node: TreeNode) => void;
+    onDblSelect?: (node: TreeNode) => void;
     onContextMenu?: (node: TreeNode, event: MouseEvent) => void;
     depth?: number;
   }
 
-  let { nodes, onSelect, onContextMenu, depth = 0 }: Props = $props();
+  let { nodes, onSelect, onDblSelect, onContextMenu, depth = 0 }: Props = $props();
 
   let expanded: Record<string, boolean> = $state({});
 
@@ -43,6 +44,7 @@
     <button
       class="tree-label"
       onclick={() => onSelect?.(node)}
+      ondblclick={() => onDblSelect?.(node)}
       oncontextmenu={(e) => { if (onContextMenu) { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e); } }}
     >
       {#if node.icon}
@@ -55,7 +57,7 @@
     </button>
   </div>
   {#if node.children && expanded[node.label]}
-    <TreeView nodes={node.children} {onSelect} {onContextMenu} depth={depth + 1} />
+    <TreeView nodes={node.children} {onSelect} {onDblSelect} {onContextMenu} depth={depth + 1} />
   {/if}
 {/each}
 

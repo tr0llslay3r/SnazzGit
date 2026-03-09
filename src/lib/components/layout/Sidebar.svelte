@@ -191,7 +191,7 @@
         <span>Branches</span>
         <button class="section-action" onclick={() => $showBranchDialog = true} title="New branch">+</button>
       </div>
-      <TreeView nodes={branchNodes()} onSelect={onBranchSelect} onContextMenu={onBranchContext} />
+      <TreeView nodes={branchNodes()} onDblSelect={onBranchSelect} onContextMenu={onBranchContext} />
     </div>
 
     <div class="sidebar-section">
