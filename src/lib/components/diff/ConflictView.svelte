@@ -287,7 +287,6 @@
           bind:value={resultContent}
           spellcheck="false"
           autocomplete="off"
-          autocorrect="off"
           autocapitalize="off"
         ></textarea>
       </div>
