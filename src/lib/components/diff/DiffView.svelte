@@ -1,8 +1,9 @@
 <script lang="ts">
   import DiffLineComponent from './DiffLine.svelte';
   import HunkHeader from './HunkHeader.svelte';
+  import ConflictView from './ConflictView.svelte';
   import { diffMode, selectedFile, selectedFileStaged } from '$lib/stores/ui';
-  import { repoInfo } from '$lib/stores/repo';
+  import { repoInfo, workingStatus } from '$lib/stores/repo';
   import * as tauri from '$lib/utils/tauri';
   import type { DiffFile } from '$lib/types';
 
@@ -18,6 +19,14 @@
 
   // Plain counter to cancel stale requests (not reactive)
   let requestId = 0;
+
+  let isConflicted = $derived(
+    !$selectedFileStaged &&
+      ($workingStatus?.unstaged.some(
+        (f) => f.path === $selectedFile && f.status === 'Conflicted'
+      ) ??
+        false)
+  );
 
   async function fetchDiff(repoPath: string, filePath: string, staged: boolean, id: number) {
     try {
@@ -41,6 +50,12 @@
       return;
     }
 
+    if (isConflicted) {
+      activeDiff = null;
+      loadError = null;
+      return;
+    }
+
     const filePath = $selectedFile;
     const repo = $repoInfo;
     const staged = $selectedFileStaged;
@@ -57,7 +72,9 @@
 </script>
 
 <div class="diff-view">
-  {#if activeDiff && activeDiff.hunks.length > 0}
+  {#if isConflicted && $selectedFile}
+    <ConflictView filePath={$selectedFile} />
+  {:else if activeDiff && activeDiff.hunks.length > 0}
     <div class="diff-toolbar">
       <span class="diff-path">{activeDiff.path}</span>
       <div class="diff-mode-toggle">

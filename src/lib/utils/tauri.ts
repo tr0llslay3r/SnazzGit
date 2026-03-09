@@ -9,6 +9,7 @@ import type {
   BlameInfo,
   Theme,
   RecentRepo,
+  ConflictFile,
 } from '$lib/types';
 
 // CLI
@@ -139,3 +140,13 @@ export const addRecentRepo = (path: string, name: string) =>
 
 export const removeRecentRepo = (path: string) =>
   invoke<RecentRepo[]>('remove_recent_repo', { path });
+
+// Conflict resolution
+export const getConflictDiff = (path: string, filePath: string) =>
+  invoke<ConflictFile>('get_conflict_diff', { path, filePath });
+
+export const resolveConflictOursTheirs = (path: string, filePath: string, useOurs: boolean) =>
+  invoke<void>('resolve_conflict_ours_theirs', { path, filePath, useOurs });
+
+export const saveResolvedConflict = (path: string, filePath: string, content: string) =>
+  invoke<void>('save_resolved_conflict', { path, filePath, content });

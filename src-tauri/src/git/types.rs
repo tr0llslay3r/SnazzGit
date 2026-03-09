@@ -158,3 +158,27 @@ pub struct BlameLine {
     pub date: i64,
     pub content: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictHunkKind {
+    Context,
+    Ours,
+    Theirs,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConflictHunk {
+    pub kind: ConflictHunkKind,
+    pub lines: Vec<String>,
+    pub start_line: u32,
+    pub conflict_index: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConflictFile {
+    pub path: String,
+    pub hunks: Vec<ConflictHunk>,
+    pub our_label: String,
+    pub their_label: String,
+}

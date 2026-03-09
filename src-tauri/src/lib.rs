@@ -3,7 +3,7 @@ mod git;
 mod recent;
 mod theme;
 
-use commands::{blame, branches, commits, diff, recent as recent_cmd, remotes, repo, search, stash, status, theme as theme_cmd};
+use commands::{blame, branches, commits, conflict, diff, recent as recent_cmd, remotes, repo, search, stash, status, theme as theme_cmd};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -44,6 +44,10 @@ pub fn run() {
             // Diff
             diff::get_working_diff,
             diff::get_commit_diff,
+            // Conflict resolution
+            conflict::get_conflict_diff,
+            conflict::resolve_conflict_ours_theirs,
+            conflict::save_resolved_conflict,
             // Status
             status::get_status,
             status::stage_file,
