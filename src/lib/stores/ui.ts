@@ -15,6 +15,7 @@ export const showThemePicker = writable(false);
 export const showBranchDialog = writable(false);
 export const showStashDialog = writable(false);
 export const showMergeDialog = writable(false);
+export const jumpToCommitId = writable<string | null>(null);
 
 let toastId = 0;
 
