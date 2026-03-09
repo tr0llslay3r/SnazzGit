@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { showSearch, searchQuery, selectedCommit } from '$lib/stores/ui';
+  import { showSearch, searchQuery, jumpToCommitId } from '$lib/stores/ui';
   import { repoInfo } from '$lib/stores/repo';
   import * as tauri from '$lib/utils/tauri';
   import type { CommitInfo } from '$lib/types';
@@ -45,7 +45,7 @@
   }
 
   function selectResult(commit: CommitInfo) {
-    $selectedCommit = commit;
+    $jumpToCommitId = commit.id;
     close();
   }
 
