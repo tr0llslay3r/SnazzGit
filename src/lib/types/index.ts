@@ -123,3 +123,17 @@ export interface Toast {
   type: 'info' | 'success' | 'error' | 'warning';
   timeout?: number;
 }
+
+export interface ConflictHunk {
+  kind: 'context' | 'ours' | 'theirs';
+  lines: string[];
+  start_line: number;
+  conflict_index: number | null;
+}
+
+export interface ConflictFile {
+  path: string;
+  hunks: ConflictHunk[];
+  our_label: string;
+  their_label: string;
+}
