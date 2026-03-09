@@ -10,22 +10,85 @@
 
   let { filePath }: Props = $props();
 
+  // ── State ──────────────────────────────────────────────────────────────
   let conflictFile = $state<ConflictFile | null>(null);
   let loadError = $state<string | null>(null);
   let isLoading = $state(false);
-  // Map from conflict_index -> 'ours' | 'theirs'
   let choices = $state(new Map<number, 'ours' | 'theirs'>());
+  let resultContent = $state('');
   let isSaving = $state(false);
 
-  let conflictCount = $derived(
-    conflictFile
-      ? conflictFile.hunks.filter((h) => h.kind === 'ours').length
-      : 0
-  );
-  let resolvedCount = $derived(choices.size);
-  let allResolved = $derived(conflictCount > 0 && resolvedCount === conflictCount);
-  let unresolvedCount = $derived(conflictCount - resolvedCount);
+  // ── Types ──────────────────────────────────────────────────────────────
+  type ContextSeg = { type: 'context'; lines: string[]; startLine: number };
+  type ConflictSeg = {
+    type: 'conflict';
+    idx: number;
+    oursLines: string[];
+    oursStart: number;
+    theirsLines: string[];
+    theirsStart: number;
+  };
+  type Segment = ContextSeg | ConflictSeg;
 
+  // ── Helpers ────────────────────────────────────────────────────────────
+  function buildSegments(cf: ConflictFile | null): Segment[] {
+    if (!cf) return [];
+    const segs: Segment[] = [];
+    const theirsMap = new Map<number, ConflictHunk>();
+
+    for (const h of cf.hunks) {
+      if (h.kind === 'theirs' && h.conflict_index !== null) {
+        theirsMap.set(h.conflict_index, h);
+      }
+    }
+
+    for (const h of cf.hunks) {
+      if (h.kind === 'context') {
+        segs.push({ type: 'context', lines: h.lines, startLine: h.start_line });
+      } else if (h.kind === 'ours' && h.conflict_index !== null) {
+        const theirs = theirsMap.get(h.conflict_index);
+        if (theirs) {
+          segs.push({
+            type: 'conflict',
+            idx: h.conflict_index,
+            oursLines: h.lines,
+            oursStart: h.start_line,
+            theirsLines: theirs.lines,
+            theirsStart: theirs.start_line,
+          });
+        }
+      }
+    }
+    return segs;
+  }
+
+  function buildResult(segs: Segment[], ch: Map<number, 'ours' | 'theirs'>): string {
+    const parts: string[] = [];
+    for (const seg of segs) {
+      if (seg.type === 'context') {
+        parts.push(...seg.lines);
+      } else {
+        const choice = ch.get(seg.idx);
+        if (choice === 'ours') {
+          parts.push(...seg.oursLines);
+        } else if (choice === 'theirs') {
+          parts.push(...seg.theirsLines);
+        } else {
+          parts.push(`<<<<<<< CONFLICT ${seg.idx + 1} — unresolved >>>>>>>\n`);
+        }
+      }
+    }
+    return parts.join('');
+  }
+
+  // ── Derived ────────────────────────────────────────────────────────────
+  let segments = $derived(buildSegments(conflictFile));
+  let conflictCount = $derived(segments.filter((s) => s.type === 'conflict').length);
+  let resolvedCount = $derived(choices.size);
+  let unresolvedCount = $derived(conflictCount - resolvedCount);
+  let hasPlaceholders = $derived(resultContent.includes('<<<<<<< CONFLICT'));
+
+  // ── Load ───────────────────────────────────────────────────────────────
   $effect(() => {
     if (filePath && $repoInfo) {
       loadConflict();
@@ -37,8 +100,11 @@
     loadError = null;
     conflictFile = null;
     choices = new Map();
+    resultContent = '';
     try {
-      conflictFile = await tauri.getConflictDiff($repoInfo!.path, filePath);
+      const cf = await tauri.getConflictDiff($repoInfo!.path, filePath);
+      conflictFile = cf;
+      resultContent = buildResult(buildSegments(cf), new Map());
     } catch (err) {
       loadError = String(err);
     } finally {
@@ -46,18 +112,20 @@
     }
   }
 
+  // ── Per-conflict actions ───────────────────────────────────────────────
   function acceptOurs(idx: number) {
-    const next = new Map(choices);
-    next.set(idx, 'ours');
+    const next = new Map(choices).set(idx, 'ours');
     choices = next;
+    resultContent = buildResult(segments, next);
   }
 
   function acceptTheirs(idx: number) {
-    const next = new Map(choices);
-    next.set(idx, 'theirs');
+    const next = new Map(choices).set(idx, 'theirs');
     choices = next;
+    resultContent = buildResult(segments, next);
   }
 
+  // ── Global actions (use git index stage blobs) ─────────────────────────
   async function acceptAllOurs() {
     if (!$repoInfo) return;
     try {
@@ -80,31 +148,12 @@
     }
   }
 
-  function buildContent(): string {
-    if (!conflictFile) return '';
-    const parts: string[] = [];
-    for (const hunk of conflictFile.hunks) {
-      if (hunk.kind === 'context') {
-        parts.push(...hunk.lines);
-      } else if (hunk.kind === 'ours' && hunk.conflict_index !== null) {
-        if (choices.get(hunk.conflict_index) === 'ours') {
-          parts.push(...hunk.lines);
-        }
-      } else if (hunk.kind === 'theirs' && hunk.conflict_index !== null) {
-        if (choices.get(hunk.conflict_index) === 'theirs') {
-          parts.push(...hunk.lines);
-        }
-      }
-    }
-    return parts.join('');
-  }
-
+  // ── Save (uses current textarea content verbatim) ──────────────────────
   async function saveAndStage() {
-    if (!conflictFile || !$repoInfo || !allResolved) return;
+    if (!$repoInfo) return;
     isSaving = true;
     try {
-      const content = buildContent();
-      await tauri.saveResolvedConflict($repoInfo.path, filePath, content);
+      await tauri.saveResolvedConflict($repoInfo.path, filePath, resultContent);
       await refreshStatus();
       addToast('Conflict resolved and staged', 'success');
     } catch (e) {
@@ -113,161 +162,163 @@
       isSaving = false;
     }
   }
-
-  // Group hunks into display segments: pairs of [ours, theirs] with same conflict_index
-  type ConflictPair = { idx: number; ours: ConflictHunk; theirs: ConflictHunk };
-  type Segment =
-    | { type: 'context'; hunk: ConflictHunk }
-    | { type: 'conflict'; pair: ConflictPair };
-
-  let segments = $derived((): Segment[] => {
-    if (!conflictFile) return [];
-    const result: Segment[] = [];
-    const pairs = new Map<number, Partial<ConflictPair>>();
-
-    for (const hunk of conflictFile.hunks) {
-      if (hunk.kind === 'context') {
-        result.push({ type: 'context', hunk });
-      } else if (hunk.kind === 'ours' && hunk.conflict_index !== null) {
-        const idx = hunk.conflict_index;
-        pairs.set(idx, { ...(pairs.get(idx) ?? { idx }), ours: hunk });
-      } else if (hunk.kind === 'theirs' && hunk.conflict_index !== null) {
-        const idx = hunk.conflict_index;
-        const pair = { ...(pairs.get(idx) ?? { idx }), theirs: hunk } as ConflictPair;
-        pairs.set(idx, pair);
-        if (pair.ours && pair.theirs) {
-          result.push({ type: 'conflict', pair });
-        }
-      }
-    }
-    return result;
-  });
 </script>
 
 <div class="conflict-view">
-  <!-- Toolbar -->
-  <div class="conflict-toolbar">
-    <span class="conflict-path">{filePath}</span>
+  <!-- ── Toolbar ──────────────────────────────────────────────────────── -->
+  <div class="toolbar">
+    <span class="path">{filePath}</span>
     <div class="toolbar-right">
-      {#if isLoading}
-        <span class="status-badge">Loading…</span>
-      {:else if conflictCount > 0}
+      {#if !isLoading && conflictFile}
         {#if unresolvedCount > 0}
-          <span class="badge badge-danger">{unresolvedCount} unresolved</span>
+          <span class="badge badge-warn">{unresolvedCount} unresolved</span>
         {:else}
-          <span class="badge badge-success">All resolved</span>
+          <span class="badge badge-ok">All resolved</span>
         {/if}
       {/if}
-      <button class="action-btn" onclick={acceptAllOurs} disabled={isLoading || !conflictFile}>
+      <button class="btn" onclick={acceptAllOurs} disabled={isLoading || !conflictFile}>
         Accept All Ours
       </button>
-      <button class="action-btn" onclick={acceptAllTheirs} disabled={isLoading || !conflictFile}>
+      <button class="btn" onclick={acceptAllTheirs} disabled={isLoading || !conflictFile}>
         Accept All Theirs
       </button>
     </div>
   </div>
 
-  <!-- Body -->
-  <div class="conflict-body">
-    {#if isLoading}
-      <div class="message">Loading conflict…</div>
-    {:else if loadError}
-      <div class="message error">{loadError}</div>
-    {:else if conflictFile}
-      <div class="conflict-content">
-        {#each segments() as seg}
-          {#if seg.type === 'context'}
-            {#each seg.hunk.lines as line, i}
-              <div class="diff-line line-context">
-                <span class="line-no">{seg.hunk.start_line + i}</span>
-                <span class="line-prefix"> </span>
-                <span class="line-content">{line}</span>
-              </div>
+  <!-- ── Loading / error ─────────────────────────────────────────────── -->
+  {#if isLoading}
+    <div class="message">Loading…</div>
+  {:else if loadError}
+    <div class="message error">{loadError}</div>
+  {:else if conflictFile}
+    <!-- ── Body ──────────────────────────────────────────────────────── -->
+    <div class="body">
+
+      <!-- ── Top: side-by-side ─────────────────────────────────────── -->
+      <div class="side-by-side">
+        <!-- Sticky column headers -->
+        <div class="panel-labels">
+          <div class="panel-label label-ours">Ours — {conflictFile.our_label}</div>
+          <div class="panel-label label-theirs">Theirs — {conflictFile.their_label}</div>
+        </div>
+
+        <!-- Scrollable two-column grid (auto-aligns rows) -->
+        <div class="merge-scroll">
+          <div class="merge-grid">
+            {#each segments as seg}
+              {#if seg.type === 'context'}
+                <!-- Both columns show identical context -->
+                <div class="cell cell-ctx cell-br">
+                  {#each seg.lines as line, i}
+                    <div class="code-row">
+                      <span class="lnum">{seg.startLine + i}</span>
+                      <span class="code">{line}</span>
+                    </div>
+                  {/each}
+                </div>
+                <div class="cell cell-ctx">
+                  {#each seg.lines as line, i}
+                    <div class="code-row">
+                      <span class="lnum">{seg.startLine + i}</span>
+                      <span class="code">{line}</span>
+                    </div>
+                  {/each}
+                </div>
+
+              {:else if seg.type === 'conflict'}
+                {@const choice = choices.get(seg.idx)}
+
+                <!-- Ours column -->
+                <div class="cell cell-ours cell-br" class:chosen={choice === 'ours'}>
+                  <div class="cell-header cell-header-ours">
+                    <span class="cnum">#{seg.idx + 1}</span>
+                    <button
+                      class="use-btn use-ours"
+                      class:active={choice === 'ours'}
+                      onclick={() => acceptOurs(seg.idx)}
+                    >
+                      {choice === 'ours' ? '✓ Using Ours' : 'Use Ours ↓'}
+                    </button>
+                  </div>
+                  {#each seg.oursLines as line, i}
+                    <div class="code-row row-ours">
+                      <span class="lnum">{seg.oursStart + i}</span>
+                      <span class="code">{line}</span>
+                    </div>
+                  {/each}
+                </div>
+
+                <!-- Theirs column -->
+                <div class="cell cell-theirs" class:chosen={choice === 'theirs'}>
+                  <div class="cell-header cell-header-theirs">
+                    <span class="cnum">#{seg.idx + 1}</span>
+                    <button
+                      class="use-btn use-theirs"
+                      class:active={choice === 'theirs'}
+                      onclick={() => acceptTheirs(seg.idx)}
+                    >
+                      {choice === 'theirs' ? '✓ Using Theirs' : 'Use Theirs ↓'}
+                    </button>
+                  </div>
+                  {#each seg.theirsLines as line, i}
+                    <div class="code-row row-theirs">
+                      <span class="lnum">{seg.theirsStart + i}</span>
+                      <span class="code">{line}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
             {/each}
-          {:else if seg.type === 'conflict'}
-            {@const pair = seg.pair}
-            {@const choice = choices.get(pair.idx)}
-            <!-- Ours header -->
-            <div class="hunk-header hunk-header-ours">
-              <span class="hunk-label">
-                &lt;&lt;&lt;&lt;&lt;&lt;&lt; {conflictFile.our_label} (ours)
-              </span>
-              <div class="hunk-actions">
-                {#if choice === 'ours'}
-                  <span class="resolved-badge badge-success">Accepted</span>
-                {:else}
-                  <button class="accept-btn accept-ours" onclick={() => acceptOurs(pair.idx)}>
-                    Accept Ours
-                  </button>
-                {/if}
-              </div>
-            </div>
-            <!-- Ours lines -->
-            {#each pair.ours.lines as line, i}
-              <div class="diff-line line-ours" class:dimmed={choice === 'theirs'}>
-                <span class="line-no">{pair.ours.start_line + i}</span>
-                <span class="line-prefix">+</span>
-                <span class="line-content">{line}</span>
-              </div>
-            {/each}
-            <!-- Separator -->
-            <div class="hunk-separator">=======</div>
-            <!-- Theirs header -->
-            <div class="hunk-header hunk-header-theirs">
-              <span class="hunk-label">
-                &gt;&gt;&gt;&gt;&gt;&gt;&gt; {conflictFile.their_label} (theirs)
-              </span>
-              <div class="hunk-actions">
-                {#if choice === 'theirs'}
-                  <span class="resolved-badge badge-theirs">Accepted</span>
-                {:else}
-                  <button class="accept-btn accept-theirs" onclick={() => acceptTheirs(pair.idx)}>
-                    Accept Theirs
-                  </button>
-                {/if}
-              </div>
-            </div>
-            <!-- Theirs lines -->
-            {#each pair.theirs.lines as line, i}
-              <div class="diff-line line-theirs" class:dimmed={choice === 'ours'}>
-                <span class="line-no">{pair.theirs.start_line + i}</span>
-                <span class="line-prefix">+</span>
-                <span class="line-content">{line}</span>
-              </div>
-            {/each}
-            <!-- End marker -->
-            <div class="hunk-end">
-              &gt;&gt;&gt;&gt;&gt;&gt;&gt; end of conflict {pair.idx + 1}
-            </div>
-          {/if}
-        {/each}
+          </div>
+        </div>
       </div>
 
-      <!-- Footer when all resolved -->
-      {#if allResolved}
-        <div class="conflict-footer">
-          <span class="footer-msg">All conflicts resolved.</span>
-          <button class="save-btn" onclick={saveAndStage} disabled={isSaving}>
-            {isSaving ? 'Saving…' : 'Save & Stage'}
-          </button>
+      <!-- ── Splitter ───────────────────────────────────────────────── -->
+      <div class="splitter"></div>
+
+      <!-- ── Bottom: editable result ───────────────────────────────── -->
+      <div class="result-panel">
+        <div class="result-header">
+          Result
+          <span class="result-hint">— editable, saved as-is on Save &amp; Stage</span>
         </div>
+        <textarea
+          class="result-textarea"
+          bind:value={resultContent}
+          spellcheck="false"
+          autocomplete="off"
+          autocapitalize="off"
+        ></textarea>
+      </div>
+    </div>
+
+    <!-- ── Footer ──────────────────────────────────────────────────────── -->
+    <div class="footer">
+      {#if hasPlaceholders}
+        <span class="footer-warn">⚠ Unresolved conflicts remain in result</span>
       {/if}
-    {/if}
-  </div>
+      <button class="save-btn" onclick={saveAndStage} disabled={isSaving}>
+        {isSaving ? 'Saving…' : 'Save & Stage'}
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
+  /* ── Shell ────────────────────────────────────────────────────────────── */
   .conflict-view {
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 12px;
   }
 
-  .conflict-toolbar {
+  /* ── Toolbar ──────────────────────────────────────────────────────────── */
+  .toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     padding: 6px 12px;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
@@ -275,11 +326,9 @@
     gap: 8px;
   }
 
-  .conflict-path {
-    font-family: monospace;
-    font-size: 12px;
-    color: var(--text-primary);
+  .path {
     flex: 1;
+    color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -296,203 +345,223 @@
     border-radius: 10px;
     padding: 1px 8px;
     font-size: 11px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
   }
+  .badge-warn { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+  .badge-ok   { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
 
-  .badge-danger {
-    background: color-mix(in srgb, var(--danger) 20%, transparent);
-    color: var(--danger);
-  }
-
-  .badge-success {
-    background: color-mix(in srgb, var(--success) 20%, transparent);
-    color: var(--success);
-  }
-
-  .status-badge {
-    font-size: 11px;
-    color: var(--text-secondary);
-  }
-
-  .action-btn {
+  .btn {
     padding: 2px 8px;
     border: 1px solid var(--border);
     border-radius: 4px;
     background: none;
     color: var(--text-secondary);
     font-size: 11px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
     cursor: pointer;
   }
+  .btn:hover:not(:disabled) { background: var(--bg-surface); color: var(--text-primary); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
 
-  .action-btn:hover:not(:disabled) {
-    background: var(--bg-surface);
-    color: var(--text-primary);
-  }
-
-  .action-btn:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  .conflict-body {
-    flex: 1;
-    overflow: auto;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .conflict-content {
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 12px;
-    flex: 1;
-  }
-
+  /* ── Loading / error ──────────────────────────────────────────────────── */
   .message {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 100%;
     color: var(--text-secondary);
+    font-family: ui-sans-serif, system-ui, sans-serif;
   }
+  .message.error { color: var(--danger); }
 
-  .message.error {
-    color: var(--danger);
-  }
-
-  /* Diff lines */
-  .diff-line {
-    display: flex;
-    align-items: baseline;
-    line-height: 20px;
-    white-space: pre;
-  }
-
-  .line-context {
-    color: var(--text-primary);
-  }
-
-  .line-ours {
-    background: color-mix(in srgb, var(--success) 15%, transparent);
-    color: var(--success);
-  }
-
-  .line-theirs {
-    background: color-mix(in srgb, #7c6fcd 15%, transparent);
-    color: #a79fdf;
-  }
-
-  .line-ours.dimmed,
-  .line-theirs.dimmed {
-    opacity: 0.3;
-  }
-
-  .line-no {
-    width: 45px;
-    text-align: right;
-    padding-right: 8px;
-    color: var(--text-secondary);
-    opacity: 0.6;
-    user-select: none;
-    flex-shrink: 0;
-  }
-
-  .line-prefix {
-    width: 16px;
-    text-align: center;
-    flex-shrink: 0;
-    user-select: none;
-  }
-
-  .line-content {
+  /* ── Body: column flex containing side-by-side + result ─────────────── */
+  .body {
     flex: 1;
-    padding-right: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
   }
 
-  /* Hunk headers */
-  .hunk-header {
+  /* ── Side-by-side (top 60%) ───────────────────────────────────────────── */
+  .side-by-side {
+    flex: 3;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 4px 12px;
-    border-top: 1px solid var(--border);
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* Fixed column label bar */
+  .panel-labels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    flex-shrink: 0;
     border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+  }
+
+  .panel-label {
+    padding: 5px 12px;
     font-size: 11px;
-    font-family: monospace;
-  }
-
-  .hunk-header-ours {
-    background: color-mix(in srgb, var(--success) 8%, var(--bg-secondary));
-    color: var(--success);
-  }
-
-  .hunk-header-theirs {
-    background: color-mix(in srgb, #7c6fcd 8%, var(--bg-secondary));
-    color: #a79fdf;
-  }
-
-  .hunk-label {
-    flex: 1;
+    font-weight: 600;
+    font-family: ui-sans-serif, system-ui, sans-serif;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .label-ours   { color: var(--success); border-right: 1px solid var(--border); }
+  .label-theirs { color: #a79fdf; }
 
-  .hunk-actions {
-    flex-shrink: 0;
-    margin-left: 8px;
+  /* Single scrollable area — one scroll bar governs both columns */
+  .merge-scroll {
+    flex: 1;
+    overflow: auto;
   }
 
-  .hunk-separator {
-    padding: 2px 12px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    font-size: 11px;
-    font-family: monospace;
-    border-top: 1px dashed var(--border);
-    border-bottom: 1px dashed var(--border);
+  /* CSS grid auto-aligns ours/theirs cells to the same row height */
+  .merge-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
-  .hunk-end {
-    padding: 2px 12px;
-    background: color-mix(in srgb, #7c6fcd 8%, var(--bg-secondary));
-    color: #a79fdf;
-    font-size: 11px;
-    font-family: monospace;
+  /* ── Grid cells ───────────────────────────────────────────────────────── */
+  .cell {
     border-bottom: 1px solid var(--border);
+    min-width: 0; /* prevent grid blowout */
+    overflow: hidden;
   }
 
-  /* Accept buttons */
-  .accept-btn {
+  .cell-br { border-right: 1px solid var(--border); }
+
+  .cell-ctx { background: var(--bg-primary); }
+
+  .cell-ours   { background: color-mix(in srgb, var(--success) 4%, var(--bg-primary)); }
+  .cell-theirs { background: color-mix(in srgb, #7c6fcd 4%, var(--bg-primary)); }
+
+  .cell-ours.chosen   { background: color-mix(in srgb, var(--success) 11%, var(--bg-primary)); }
+  .cell-theirs.chosen { background: color-mix(in srgb, #7c6fcd 11%, var(--bg-primary)); }
+
+  /* ── Conflict cell header row ─────────────────────────────────────────── */
+  .cell-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 8px;
+    border-bottom: 1px dashed var(--border);
+    background: var(--bg-secondary);
+  }
+
+  .cell-header-ours   { border-left: 2px solid var(--success); }
+  .cell-header-theirs { border-left: 2px solid #7c6fcd; }
+
+  .cnum {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+
+  /* ── Code rows ────────────────────────────────────────────────────────── */
+  .code-row {
+    display: flex;
+    align-items: baseline;
+    height: 20px;
+    white-space: pre;
+    overflow: hidden;
+  }
+
+  .lnum {
+    width: 40px;
+    flex-shrink: 0;
+    text-align: right;
+    padding-right: 6px;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    user-select: none;
+    font-size: 11px;
+  }
+
+  .code {
+    flex: 1;
+    padding: 0 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+  }
+
+  .row-ours   .code { color: var(--success); }
+  .row-theirs .code { color: #a79fdf; }
+
+  /* ── Use buttons ──────────────────────────────────────────────────────── */
+  .use-btn {
     padding: 2px 8px;
     border-radius: 4px;
     font-size: 11px;
+    font-family: ui-sans-serif, system-ui, sans-serif;
     cursor: pointer;
+    border: 1px solid;
   }
 
-  .accept-ours {
-    border: 1px solid var(--success);
-    background: color-mix(in srgb, var(--success) 15%, transparent);
-    color: var(--success);
+  .use-ours  { border-color: var(--success); background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+  .use-theirs { border-color: #7c6fcd; background: color-mix(in srgb, #7c6fcd 15%, transparent); color: #a79fdf; }
+
+  .use-ours.active   { background: var(--success); color: var(--bg-primary); }
+  .use-theirs.active { background: #7c6fcd; color: #fff; }
+
+  /* ── Splitter between top and bottom panels ───────────────────────────── */
+  .splitter {
+    height: 4px;
+    background: var(--border);
+    flex-shrink: 0;
   }
 
-  .accept-theirs {
-    border: 1px solid #7c6fcd;
-    background: color-mix(in srgb, #7c6fcd 15%, transparent);
-    color: #a79fdf;
+  /* ── Result panel (bottom 40%) ────────────────────────────────────────── */
+  .result-panel {
+    flex: 2;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
   }
 
-  .resolved-badge {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 10px;
+  .result-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
   }
 
-  .badge-theirs {
-    background: color-mix(in srgb, #7c6fcd 20%, transparent);
-    color: #a79fdf;
+  .result-hint {
+    font-weight: 400;
+    font-style: italic;
+    opacity: 0.7;
   }
 
-  /* Footer */
-  .conflict-footer {
+  .result-textarea {
+    flex: 1;
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 20px;
+    padding: 8px 12px;
+    tab-size: 4;
+  }
+
+  /* ── Footer ───────────────────────────────────────────────────────────── */
+  .footer {
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -503,24 +572,22 @@
     flex-shrink: 0;
   }
 
-  .footer-msg {
-    font-size: 12px;
-    color: var(--success);
+  .footer-warn {
+    font-size: 11px;
+    color: var(--warning, #f59e0b);
+    font-family: ui-sans-serif, system-ui, sans-serif;
   }
 
   .save-btn {
-    padding: 4px 14px;
+    padding: 4px 16px;
     border: none;
     border-radius: 4px;
     background: var(--accent);
     color: var(--bg-primary);
     font-size: 12px;
     font-weight: 600;
+    font-family: ui-sans-serif, system-ui, sans-serif;
     cursor: pointer;
   }
-
-  .save-btn:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
+  .save-btn:disabled { opacity: 0.4; cursor: default; }
 </style>
