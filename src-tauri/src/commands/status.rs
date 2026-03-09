@@ -50,6 +50,14 @@ pub async fn discard_file(path: String, file_path: String) -> Result<(), String>
 }
 
 #[tauri::command]
+pub async fn delete_file(path: String, file_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || status::delete_file(&path, &file_path))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn add_to_gitignore(path: String, pattern: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || status::add_to_gitignore(&path, &pattern))
         .await
