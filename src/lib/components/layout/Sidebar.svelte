@@ -149,6 +149,18 @@
     }
   }
 
+  function onBranchNavigate(node: { label: string; data?: unknown }) {
+    const branchName = node.label;
+    const commit = $commits.find((c) =>
+      c.refs.some((r) =>
+        (r.ref_type === 'LocalBranch' || r.ref_type === 'RemoteBranch') && r.name === branchName
+      )
+    );
+    if (commit) {
+      $jumpToCommitId = commit.id;
+    }
+  }
+
   async function onBranchSelect(node: { label: string; data?: unknown }) {
     if (!$repoInfo) return;
     const branch = node.data as { name: string; is_head: boolean } | undefined;
@@ -191,7 +203,7 @@
         <span>Branches</span>
         <button class="section-action" onclick={() => $showBranchDialog = true} title="New branch">+</button>
       </div>
-      <TreeView nodes={branchNodes()} onDblSelect={onBranchSelect} onContextMenu={onBranchContext} />
+      <TreeView nodes={branchNodes()} onSelect={onBranchNavigate} onDblSelect={onBranchSelect} onContextMenu={onBranchContext} />
     </div>
 
     <div class="sidebar-section">
