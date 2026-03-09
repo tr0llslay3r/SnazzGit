@@ -1,6 +1,6 @@
 <script lang="ts">
   import { commits, graphRows, repoInfo, refreshAll } from '$lib/stores/repo';
-  import { selectedCommit, showBranchDialog, addToast } from '$lib/stores/ui';
+  import { selectedCommit, showBranchDialog, addToast, jumpToCommitId } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import CommitGraph from './CommitGraph.svelte';
   import * as tauri from '$lib/utils/tauri';
@@ -21,6 +21,16 @@
     scrollTop = container.scrollTop;
     clientHeight = container.clientHeight;
   }
+
+  $effect(() => {
+    const id = $jumpToCommitId;
+    if (!id || !container) return;
+    const index = $commits.findIndex((c) => c.id === id);
+    if (index === -1) return;
+    $selectedCommit = $commits[index];
+    container.scrollTo({ top: index * ROW_HEIGHT, behavior: 'smooth' });
+    $jumpToCommitId = null;
+  });
 
   function selectCommit(commit: CommitInfo) {
     if ($selectedCommit?.id === commit.id) {

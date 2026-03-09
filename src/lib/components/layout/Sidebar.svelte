@@ -1,7 +1,7 @@
 <script lang="ts">
   import TreeView from '$lib/components/shared/TreeView.svelte';
-  import { repoInfo, localBranches, remoteBranches, stashEntries, workingStatus, refreshAll, refreshStatus, refreshStashes } from '$lib/stores/repo';
-  import { showBranchDialog, showStashDialog, selectedCommit, showStagingArea, selectedFile, addToast } from '$lib/stores/ui';
+  import { repoInfo, localBranches, remoteBranches, stashEntries, workingStatus, commits, refreshAll, refreshStatus, refreshStashes } from '$lib/stores/repo';
+  import { showBranchDialog, showStashDialog, selectedCommit, showStagingArea, selectedFile, addToast, jumpToCommitId } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
 
@@ -141,6 +141,14 @@
     $showStashDialog = true;
   }
 
+  function onTagSelect(node: { label: string; data?: unknown }) {
+    const tagName = node.label;
+    const commit = $commits.find((c) => c.refs.some((r) => r.ref_type === 'Tag' && r.name === tagName));
+    if (commit) {
+      $jumpToCommitId = commit.id;
+    }
+  }
+
   async function onBranchSelect(node: { label: string; data?: unknown }) {
     if (!$repoInfo) return;
     const branch = node.data as { name: string; is_head: boolean } | undefined;
@@ -193,7 +201,7 @@
 
     <div class="sidebar-section">
       <div class="section-header"><span>Tags</span></div>
-      <TreeView nodes={tagNodes()} />
+      <TreeView nodes={tagNodes()} onSelect={onTagSelect} />
     </div>
 
     <div class="sidebar-section">
