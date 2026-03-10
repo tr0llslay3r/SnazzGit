@@ -83,6 +83,14 @@ src-tauri/              # Backend (Rust)
     commands/           # Tauri IPC command handlers
 ```
 
+## Privacy
+
+SnazzGit is a fully local application. It does not transmit any data to external servers. All git operations run locally using the bundled `git2` library. Network activity only occurs for explicit user-initiated remote operations (fetch, pull, push) to repositories you have configured.
+
+## Code Signing Policy
+
+See [CODE_SIGNING.md](CODE_SIGNING.md) for details on how SnazzGit releases are signed.
+
 ## License
 
 [MIT](LICENSE)
