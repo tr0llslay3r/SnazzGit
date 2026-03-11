@@ -15,14 +15,19 @@
     onDblSelect?: (node: TreeNode) => void;
     onContextMenu?: (node: TreeNode, event: MouseEvent) => void;
     depth?: number;
+    defaultExpanded?: boolean;
   }
 
-  let { nodes, onSelect, onDblSelect, onContextMenu, depth = 0 }: Props = $props();
+  let { nodes, onSelect, onDblSelect, onContextMenu, depth = 0, defaultExpanded = false }: Props = $props();
 
   let expanded: Record<string, boolean> = $state({});
 
+  function isExpanded(label: string) {
+    return expanded[label] ?? defaultExpanded;
+  }
+
   function toggle(label: string) {
-    expanded[label] = !expanded[label];
+    expanded[label] = !isExpanded(label);
   }
 </script>
 
@@ -34,7 +39,7 @@
         onclick={() => toggle(node.label)}
         aria-label="Toggle {node.label}"
       >
-        <svg class="chevron" class:open={expanded[node.label]} viewBox="0 0 16 16" width="12" height="12">
+        <svg class="chevron" class:open={isExpanded(node.label)} viewBox="0 0 16 16" width="12" height="12">
           <path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/>
         </svg>
       </button>
@@ -43,9 +48,10 @@
     {/if}
     <button
       class="tree-label"
-      onclick={() => onSelect?.(node)}
-      ondblclick={() => onDblSelect?.(node)}
-      oncontextmenu={(e) => { if (onContextMenu) { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e); } }}
+      class:tree-folder={node.children && node.children.length > 0}
+      onclick={() => { if (node.children && node.children.length > 0) { toggle(node.label); } else { onSelect?.(node); } }}
+      ondblclick={() => { if (!(node.children && node.children.length > 0)) { onDblSelect?.(node); } }}
+      oncontextmenu={(e) => { if (onContextMenu && !(node.children && node.children.length > 0)) { e.preventDefault(); e.stopPropagation(); onContextMenu(node, e); } }}
     >
       {#if node.icon}
         <span class="tree-icon">{node.icon}</span>
@@ -56,8 +62,8 @@
       {/if}
     </button>
   </div>
-  {#if node.children && expanded[node.label]}
-    <TreeView nodes={node.children} {onSelect} {onDblSelect} {onContextMenu} depth={depth + 1} />
+  {#if node.children && isExpanded(node.label)}
+    <TreeView nodes={node.children} {onSelect} {onDblSelect} {onContextMenu} depth={depth + 1} {defaultExpanded} />
   {/if}
 {/each}
 
@@ -113,6 +119,9 @@
   }
   .tree-label:hover {
     background: var(--bg-surface);
+  }
+  .tree-folder {
+    color: var(--text-secondary);
   }
   .tree-icon {
     font-size: 14px;
