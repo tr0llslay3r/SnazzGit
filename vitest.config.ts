@@ -4,6 +4,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      include: ['src/lib/**/*.ts'],
+      exclude: ['src/lib/types/**', '**/*.test.ts'],
+    },
   },
   resolve: {
     alias: {
