@@ -1,8 +1,12 @@
 <script lang="ts">
   import { repoInfo, isLoading, refreshAll, refreshCommits, refreshStatus, refreshRepo, closeRepo, loadRecentRepos } from '$lib/stores/repo';
-  import { showSearch, showStagingArea, showThemePicker, addToast } from '$lib/stores/ui';
+  import { showSearch, showStagingArea, showThemePicker, showCloneDialog, showCredentialDialog, pendingCredentialRequest, addToast } from '$lib/stores/ui';
   import * as tauri from '$lib/utils/tauri';
   import { open } from '@tauri-apps/plugin-dialog';
+
+  function isAuthError(e: unknown): boolean {
+    return String(e).includes('Authentication failed');
+  }
 
   async function openRepo() {
     try {
@@ -30,7 +34,12 @@
       await refreshAll();
       addToast('Fetch complete', 'success');
     } catch (e) {
-      addToast(`Fetch failed: ${e}`, 'error');
+      if (isAuthError(e)) {
+        $pendingCredentialRequest = { operation: 'fetch', remoteName: $repoInfo.remotes[0] };
+        $showCredentialDialog = true;
+      } else {
+        addToast(`Fetch failed: ${e}`, 'error');
+      }
     } finally {
       $isLoading = false;
     }
@@ -44,7 +53,12 @@
       await refreshAll();
       addToast(`Pull: ${result}`, 'success');
     } catch (e) {
-      addToast(`Pull failed: ${e}`, 'error');
+      if (isAuthError(e)) {
+        $pendingCredentialRequest = { operation: 'pull', remoteName: $repoInfo.remotes[0] };
+        $showCredentialDialog = true;
+      } else {
+        addToast(`Pull failed: ${e}`, 'error');
+      }
     } finally {
       $isLoading = false;
     }
@@ -58,7 +72,12 @@
       await refreshAll();
       addToast('Push complete', 'success');
     } catch (e) {
-      addToast(`Push failed: ${e}`, 'error');
+      if (isAuthError(e)) {
+        $pendingCredentialRequest = { operation: 'push', remoteName: $repoInfo.remotes[0] };
+        $showCredentialDialog = true;
+      } else {
+        addToast(`Push failed: ${e}`, 'error');
+      }
     } finally {
       $isLoading = false;
     }
@@ -78,6 +97,10 @@
     <button class="toolbar-btn" onclick={openRepo} title="Open Repository">
       <svg viewBox="0 0 16 16" width="16" height="16"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h3.879a1.5 1.5 0 0 1 1.06.44l1.122 1.12A1.5 1.5 0 0 0 9.62 4H13.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z" fill="currentColor"/></svg>
       <span>Open</span>
+    </button>
+    <button class="toolbar-btn" onclick={() => $showCloneDialog = true} title="Clone Repository">
+      <svg viewBox="0 0 16 16" width="16" height="16"><path d="M11.75 2.5a.75.75 0 0 1 .75.75V7h3.75a.75.75 0 0 1 0 1.5H12.5v3.75a.75.75 0 0 1-1.5 0V8.5H7.25a.75.75 0 0 1 0-1.5H11V3.25a.75.75 0 0 1 .75-.75z" fill="currentColor"/><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25V1.75zM3.5 1.75v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V5h-3.25A1.75 1.75 0 0 1 8.5 3.25V1.5H3.75a.25.25 0 0 0-.25.25zM10 1.667V3.25c0 .138.112.25.25.25h1.583L10 1.667z" fill="currentColor"/></svg>
+      <span>Clone</span>
     </button>
     {#if $repoInfo}
       <button class="toolbar-btn" onclick={closeRepo} title="Close Repository">

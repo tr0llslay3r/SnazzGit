@@ -10,8 +10,10 @@
   import BranchDialog from '$lib/components/branch/BranchDialog.svelte';
   import MergeDialog from '$lib/components/branch/MergeDialog.svelte';
   import StashDialog from '$lib/components/shared/StashDialog.svelte';
+  import CredentialDialog from '$lib/components/shared/CredentialDialog.svelte';
+  import CloneDialog from '$lib/components/shared/CloneDialog.svelte';
   import { repoInfo, commits, recentRepos, isLoading, refreshCommits, refreshStatus, loadRecentRepos } from '$lib/stores/repo';
-  import { selectedCommit, showStagingArea, addToast } from '$lib/stores/ui';
+  import { selectedCommit, showStagingArea, showCloneDialog, addToast } from '$lib/stores/ui';
   import * as tauri from '$lib/utils/tauri';
 
   async function openRecent(path: string) {
@@ -209,6 +211,8 @@
               <p class="welcome-subtitle">Open a repository to get started</p>
             {/if}
             <p class="welcome-hint">Use the <strong>Open</strong> button in the toolbar to browse for a repository</p>
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+            <p class="welcome-hint">or <span class="clone-link" onclick={() => $showCloneDialog = true}>clone a repository</span></p>
           </div>
         </div>
       {/if}
@@ -221,6 +225,8 @@
 <BranchDialog />
 <MergeDialog />
 <StashDialog />
+<CredentialDialog />
+<CloneDialog />
 
 <style>
   .app-shell {
@@ -406,5 +412,13 @@
   .recent-remove:hover {
     background: var(--bg-secondary);
     color: var(--text-primary);
+  }
+  .clone-link {
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .clone-link:hover {
+    opacity: 0.8;
   }
 </style>
