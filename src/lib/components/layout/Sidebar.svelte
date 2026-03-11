@@ -55,7 +55,7 @@
     for (const b of $remoteBranches) {
       const [remote, ...rest] = b.name.split('/');
       if (!byRemote[remote]) byRemote[remote] = [];
-      byRemote[remote].push({ ...b, name: rest.join('/') });
+      byRemote[remote].push({ ...b, name: rest.join('/'), full_name: b.name });
     }
     return Object.entries(byRemote).map(([name, branches]) => ({
       label: name,
@@ -196,19 +196,22 @@
     }
   }
 
+  function remoteNodeToBranch(data: unknown): { name: string; is_head: boolean; is_remote: boolean; upstream: string | null; commit_id: string } {
+    const d = data as any;
+    return { ...d, name: d.full_name ?? d.name };
+  }
+
   function onRemoteSelect(node: { label: string; data?: unknown }) {
     if (!node.data) return;
-    const branch = node.data as { name: string; is_head: boolean; is_remote: boolean; upstream: string | null; commit_id: string };
-    $checkoutRemoteBranch = branch;
+    $checkoutRemoteBranch = remoteNodeToBranch(node.data);
     $showCheckoutRemoteDialog = true;
   }
 
   function onRemoteContext(node: { label: string; data?: unknown }, e: MouseEvent) {
     if (!$repoInfo || !node.data) return;
-    const branch = node.data as { name: string; commit_id: string };
     const items: ContextMenuEntry[] = [
       { label: 'Checkout...', action: () => {
-        $checkoutRemoteBranch = node.data as any;
+        $checkoutRemoteBranch = remoteNodeToBranch(node.data!);
         $showCheckoutRemoteDialog = true;
       }},
     ];
