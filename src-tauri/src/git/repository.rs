@@ -106,3 +106,79 @@ fn get_stash_count(path: &str) -> usize {
     }
     count
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_repo() -> (tempfile::TempDir, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        git2::Repository::init(&path).unwrap();
+        (dir, path)
+    }
+
+    fn make_commit_in_repo(path: &str) {
+        let repo = git2::Repository::open(path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parents: Vec<git2::Commit> = match repo.head() {
+            Ok(head) => vec![head.peel_to_commit().unwrap()],
+            Err(_) => vec![],
+        };
+        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, "Test commit", &tree, &parent_refs).unwrap();
+    }
+
+    #[test]
+    fn test_open_nonexistent_path() {
+        let result = open_repo("/tmp/nonexistent_snazzgit_test_xyz_99999");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_open_valid_repo_with_commit() {
+        let (_dir, path) = init_repo();
+        make_commit_in_repo(&path);
+        let info = open_repo(&path).unwrap();
+        assert!(!info.path.is_empty());
+        assert!(!info.is_bare);
+        assert!(!info.name.is_empty());
+    }
+
+    #[test]
+    fn test_open_repo_current_branch() {
+        let (_dir, path) = init_repo();
+        make_commit_in_repo(&path);
+        let info = open_repo(&path).unwrap();
+        // A freshly initialised repo should be on "main" or "master"
+        assert!(info.current_branch.is_some());
+    }
+
+    #[test]
+    fn test_open_repo_has_local_branch() {
+        let (_dir, path) = init_repo();
+        make_commit_in_repo(&path);
+        let info = open_repo(&path).unwrap();
+        assert!(!info.branches.is_empty());
+        let local_branches: Vec<_> = info.branches.iter().filter(|b| !b.is_remote).collect();
+        assert!(!local_branches.is_empty());
+    }
+
+    #[test]
+    fn test_open_repo_empty_remotes() {
+        let (_dir, path) = init_repo();
+        make_commit_in_repo(&path);
+        let info = open_repo(&path).unwrap();
+        assert!(info.remotes.is_empty());
+    }
+
+    #[test]
+    fn test_open_repo_stash_count_zero() {
+        let (_dir, path) = init_repo();
+        make_commit_in_repo(&path);
+        let info = open_repo(&path).unwrap();
+        assert_eq!(info.stash_count, 0);
+    }
+}

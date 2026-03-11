@@ -150,3 +150,119 @@ fn build_ref_map(repo: &Repository) -> Result<HashMap<Oid, Vec<RefInfo>>, GitErr
 
     Ok(map)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_empty_repo() -> (tempfile::TempDir, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        git2::Repository::init(&path).unwrap();
+        (dir, path)
+    }
+
+    fn make_commit_msg(path: &str, msg: &str) -> git2::Oid {
+        let repo = git2::Repository::open(path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parents: Vec<git2::Commit> = match repo.head() {
+            Ok(head) => vec![head.peel_to_commit().unwrap()],
+            Err(_) => vec![],
+        };
+        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parent_refs).unwrap()
+    }
+
+    #[test]
+    fn test_load_commits_empty_repo() {
+        let (_dir, path) = init_empty_repo();
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert!(commits.is_empty());
+    }
+
+    #[test]
+    fn test_load_commits_single() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "First commit");
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert_eq!(commits.len(), 1);
+        assert_eq!(commits[0].summary, "First commit");
+        assert_eq!(commits[0].author_name, "Test User");
+        assert_eq!(commits[0].author_email, "test@test.com");
+    }
+
+    #[test]
+    fn test_load_commits_newest_first() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "First");
+        make_commit_msg(&path, "Second");
+        make_commit_msg(&path, "Third");
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert_eq!(commits.len(), 3);
+        assert_eq!(commits[0].summary, "Third");
+        assert_eq!(commits[2].summary, "First");
+    }
+
+    #[test]
+    fn test_load_commits_respects_limit() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "A");
+        make_commit_msg(&path, "B");
+        make_commit_msg(&path, "C");
+        let commits = load_commits(&path, 2, 0).unwrap();
+        assert_eq!(commits.len(), 2);
+    }
+
+    #[test]
+    fn test_load_commits_respects_offset() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "A");
+        make_commit_msg(&path, "B");
+        make_commit_msg(&path, "C");
+        let commits = load_commits(&path, 100, 1).unwrap();
+        assert_eq!(commits.len(), 2);
+        assert_eq!(commits[0].summary, "B");
+    }
+
+    #[test]
+    fn test_load_commits_short_id_is_8_chars() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "Short id test");
+        let commits = load_commits(&path, 1, 0).unwrap();
+        assert_eq!(commits[0].short_id.len(), 8);
+        assert!(commits[0].id.starts_with(&commits[0].short_id));
+    }
+
+    #[test]
+    fn test_load_commits_parent_ids() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "Root");
+        make_commit_msg(&path, "Child");
+        let commits = load_commits(&path, 100, 0).unwrap();
+        // Child (index 0) should have Root (index 1) as parent
+        assert_eq!(commits[0].parent_ids.len(), 1);
+        assert_eq!(commits[0].parent_ids[0], commits[1].id);
+        // Root has no parents
+        assert!(commits[1].parent_ids.is_empty());
+    }
+
+    #[test]
+    fn test_get_commit_detail_by_id() {
+        let (_dir, path) = init_empty_repo();
+        let oid = make_commit_msg(&path, "Detail test");
+        let oid_str = oid.to_string();
+        let detail = get_commit_detail(&path, &oid_str).unwrap();
+        assert_eq!(detail.id, oid_str);
+        assert_eq!(detail.summary, "Detail test");
+        assert_eq!(detail.short_id, oid_str[..8].to_string());
+    }
+
+    #[test]
+    fn test_get_commit_detail_invalid_id() {
+        let (_dir, path) = init_empty_repo();
+        let result = get_commit_detail(&path, "0000000000000000000000000000000000000000");
+        assert!(result.is_err());
+    }
+}

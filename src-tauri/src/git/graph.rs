@@ -121,3 +121,112 @@ pub fn compute_graph(commits: &[CommitInfo]) -> Vec<GraphRow> {
 
     rows
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_commit(id: &str, parent_ids: Vec<&str>) -> CommitInfo {
+        CommitInfo {
+            id: id.to_string(),
+            short_id: id[..id.len().min(8)].to_string(),
+            message: String::new(),
+            summary: String::new(),
+            author_name: String::new(),
+            author_email: String::new(),
+            author_time: 0,
+            committer_name: String::new(),
+            committer_time: 0,
+            parent_ids: parent_ids.into_iter().map(|s| s.to_string()).collect(),
+            refs: vec![],
+        }
+    }
+
+    #[test]
+    fn test_empty_input() {
+        assert!(compute_graph(&[]).is_empty());
+    }
+
+    #[test]
+    fn test_single_commit_no_parents() {
+        let commits = vec![make_commit("aaaa", vec![])];
+        let rows = compute_graph(&commits);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].column, 0);
+        assert_eq!(rows[0].num_columns, 1);
+        assert!(rows[0].edges.is_empty());
+    }
+
+    #[test]
+    fn test_linear_chain() {
+        let commits = vec![
+            make_commit("child", vec!["parent"]),
+            make_commit("parent", vec![]),
+        ];
+        let rows = compute_graph(&commits);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].column, 0);
+        assert_eq!(rows[1].column, 0);
+        // child has a single straight edge to parent
+        assert_eq!(rows[0].edges.len(), 1);
+        assert_eq!(rows[0].edges[0].from_column, 0);
+        assert_eq!(rows[0].edges[0].to_column, 0);
+        assert!(matches!(rows[0].edges[0].edge_type, EdgeType::Straight));
+        // parent has no edges (not in the list as a commit's parent)
+        assert!(rows[1].edges.is_empty());
+    }
+
+    #[test]
+    fn test_linear_chain_three() {
+        let commits = vec![
+            make_commit("c", vec!["b"]),
+            make_commit("b", vec!["a"]),
+            make_commit("a", vec![]),
+        ];
+        let rows = compute_graph(&commits);
+        assert_eq!(rows.len(), 3);
+        for row in &rows {
+            assert_eq!(row.column, 0);
+            assert_eq!(row.num_columns, 1);
+        }
+    }
+
+    #[test]
+    fn test_merge_commit_two_parents() {
+        let commits = vec![
+            make_commit("merge", vec!["main_tip", "feature_tip"]),
+            make_commit("main_tip", vec![]),
+            make_commit("feature_tip", vec![]),
+        ];
+        let rows = compute_graph(&commits);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].column, 0);
+        // merge row has edges for both parents
+        assert_eq!(rows[0].edges.len(), 2);
+        // first parent: straight (same lane)
+        assert!(matches!(rows[0].edges[0].edge_type, EdgeType::Straight));
+        // second parent: fork right (new lane)
+        assert!(matches!(rows[0].edges[1].edge_type, EdgeType::ForkRight));
+    }
+
+    #[test]
+    fn test_fork_two_branches_same_parent() {
+        let commits = vec![
+            make_commit("branch_a", vec!["common"]),
+            make_commit("branch_b", vec!["common"]),
+            make_commit("common", vec![]),
+        ];
+        let rows = compute_graph(&commits);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].column, 0);
+        assert_eq!(rows[1].column, 1);
+        assert_eq!(rows[2].column, 0);
+    }
+
+    #[test]
+    fn test_commit_id_preserved() {
+        let commits = vec![make_commit("myid123", vec![])];
+        let rows = compute_graph(&commits);
+        assert_eq!(rows[0].commit_id, "myid123");
+    }
+}
