@@ -11,6 +11,7 @@ export interface RepoInfo {
 
 export interface BranchInfo {
   name: string;
+  full_name?: string;
   is_head: boolean;
   is_remote: boolean;
   upstream: string | null;
