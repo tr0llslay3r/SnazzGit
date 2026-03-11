@@ -164,3 +164,112 @@ pub fn add_to_gitignore(repo_path: &str, pattern: &str) -> Result<(), GitError> 
     writeln!(file, "{}", pattern)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn init_repo_with_commit() -> (tempfile::TempDir, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        let repo = git2::Repository::init(&path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[]).unwrap();
+        (dir, path)
+    }
+
+    fn write_file(repo_path: &str, name: &str, content: &str) {
+        let p = std::path::Path::new(repo_path).join(name);
+        let mut f = std::fs::File::create(&p).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn test_get_status_clean_repo() {
+        let (_dir, path) = init_repo_with_commit();
+        let status = get_status(&path).unwrap();
+        assert!(status.staged.is_empty());
+        assert!(status.unstaged.is_empty());
+        assert!(status.untracked.is_empty());
+    }
+
+    #[test]
+    fn test_untracked_file_appears_in_status() {
+        let (_dir, path) = init_repo_with_commit();
+        write_file(&path, "new_file.txt", "hello");
+        let status = get_status(&path).unwrap();
+        assert!(status.untracked.contains(&"new_file.txt".to_string()));
+    }
+
+    #[test]
+    fn test_stage_file_moves_to_staged() {
+        let (_dir, path) = init_repo_with_commit();
+        write_file(&path, "staged.txt", "content");
+        stage_file(&path, "staged.txt").unwrap();
+        let status = get_status(&path).unwrap();
+        assert!(!status.staged.is_empty());
+        assert_eq!(status.staged[0].path, "staged.txt");
+        assert!(matches!(status.staged[0].status, FileStatusType::New));
+    }
+
+    #[test]
+    fn test_stage_file_not_in_untracked() {
+        let (_dir, path) = init_repo_with_commit();
+        write_file(&path, "staged.txt", "content");
+        stage_file(&path, "staged.txt").unwrap();
+        let status = get_status(&path).unwrap();
+        assert!(!status.untracked.contains(&"staged.txt".to_string()));
+    }
+
+    #[test]
+    fn test_stage_all_stages_multiple_files() {
+        let (_dir, path) = init_repo_with_commit();
+        write_file(&path, "a.txt", "a");
+        write_file(&path, "b.txt", "b");
+        stage_all(&path).unwrap();
+        let status = get_status(&path).unwrap();
+        assert_eq!(status.staged.len(), 2);
+    }
+
+    #[test]
+    fn test_add_to_gitignore_creates_entry() {
+        let (_dir, path) = init_repo_with_commit();
+        add_to_gitignore(&path, "*.log").unwrap();
+        let content =
+            std::fs::read_to_string(std::path::Path::new(&path).join(".gitignore")).unwrap();
+        assert!(content.contains("*.log"));
+    }
+
+    #[test]
+    fn test_add_to_gitignore_no_duplicate() {
+        let (_dir, path) = init_repo_with_commit();
+        add_to_gitignore(&path, "*.log").unwrap();
+        add_to_gitignore(&path, "*.log").unwrap();
+        let content =
+            std::fs::read_to_string(std::path::Path::new(&path).join(".gitignore")).unwrap();
+        let count = content.lines().filter(|l| l.trim() == "*.log").count();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_add_multiple_patterns_to_gitignore() {
+        let (_dir, path) = init_repo_with_commit();
+        add_to_gitignore(&path, "*.log").unwrap();
+        add_to_gitignore(&path, "target/").unwrap();
+        let content =
+            std::fs::read_to_string(std::path::Path::new(&path).join(".gitignore")).unwrap();
+        assert!(content.contains("*.log"));
+        assert!(content.contains("target/"));
+    }
+
+    #[test]
+    fn test_delete_file_removes_it() {
+        let (_dir, path) = init_repo_with_commit();
+        write_file(&path, "to_delete.txt", "bye");
+        delete_file(&path, "to_delete.txt").unwrap();
+        assert!(!std::path::Path::new(&path).join("to_delete.txt").exists());
+    }
+}

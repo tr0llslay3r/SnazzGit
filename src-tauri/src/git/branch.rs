@@ -81,3 +81,114 @@ pub fn reset_to_commit(path: &str, commit_id: &str, mode: &str) -> Result<(), Gi
     repo.reset(commit.as_object(), reset_type, None)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_repo_with_commit() -> (tempfile::TempDir, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        let repo = git2::Repository::init(&path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[]).unwrap();
+        (dir, path)
+    }
+
+    fn add_commit(path: &str, msg: &str) {
+        let repo = git2::Repository::open(path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[&parent]).unwrap();
+    }
+
+    #[test]
+    fn test_create_branch() {
+        let (_dir, path) = init_repo_with_commit();
+        create_branch(&path, "feature", true).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        assert!(repo.find_branch("feature", git2::BranchType::Local).is_ok());
+    }
+
+    #[test]
+    fn test_create_branch_duplicate_fails() {
+        let (_dir, path) = init_repo_with_commit();
+        create_branch(&path, "dup", true).unwrap();
+        assert!(create_branch(&path, "dup", true).is_err());
+    }
+
+    #[test]
+    fn test_checkout_branch() {
+        let (_dir, path) = init_repo_with_commit();
+        create_branch(&path, "feature", true).unwrap();
+        checkout_branch(&path, "feature").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let head = repo.head().unwrap();
+        assert_eq!(head.shorthand().unwrap(), "feature");
+    }
+
+    #[test]
+    fn test_delete_branch() {
+        let (_dir, path) = init_repo_with_commit();
+        // Create the branch while still on the default branch so it is not HEAD
+        create_branch(&path, "to-delete", true).unwrap();
+        delete_branch(&path, "to-delete").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        assert!(repo.find_branch("to-delete", git2::BranchType::Local).is_err());
+    }
+
+    #[test]
+    fn test_rename_branch() {
+        let (_dir, path) = init_repo_with_commit();
+        create_branch(&path, "old-name", true).unwrap();
+        rename_branch(&path, "old-name", "new-name").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        assert!(repo.find_branch("new-name", git2::BranchType::Local).is_ok());
+        assert!(repo.find_branch("old-name", git2::BranchType::Local).is_err());
+    }
+
+    #[test]
+    fn test_reset_to_commit_soft() {
+        let (_dir, path) = init_repo_with_commit();
+        let repo = git2::Repository::open(&path).unwrap();
+        let first_id = repo.head().unwrap().target().unwrap().to_string();
+        drop(repo);
+        add_commit(&path, "Second commit");
+        reset_to_commit(&path, &first_id, "soft").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), first_id);
+    }
+
+    #[test]
+    fn test_reset_to_commit_hard() {
+        let (_dir, path) = init_repo_with_commit();
+        let repo = git2::Repository::open(&path).unwrap();
+        let first_id = repo.head().unwrap().target().unwrap().to_string();
+        drop(repo);
+        add_commit(&path, "Second commit");
+        reset_to_commit(&path, &first_id, "hard").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        assert_eq!(repo.head().unwrap().target().unwrap().to_string(), first_id);
+    }
+
+    #[test]
+    fn test_reset_invalid_mode_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let repo = git2::Repository::open(&path).unwrap();
+        let head_id = repo.head().unwrap().target().unwrap().to_string();
+        drop(repo);
+        let result = reset_to_commit(&path, &head_id, "bogus");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_reset_invalid_commit_id_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = reset_to_commit(&path, "not-a-valid-sha", "hard");
+        assert!(result.is_err());
+    }
+}
