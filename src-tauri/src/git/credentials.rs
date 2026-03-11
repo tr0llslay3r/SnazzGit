@@ -132,7 +132,7 @@ fn extract_host(url: &str) -> Option<String> {
     }
     // ssh://git@github.com/user/repo.git
     if let Some(rest) = url.strip_prefix("ssh://") {
-        let after_at = rest.split('@').last()?;
+        let after_at = rest.split('@').next_back()?;
         return after_at.split('/').next().map(|s| s.to_string());
     }
     None
