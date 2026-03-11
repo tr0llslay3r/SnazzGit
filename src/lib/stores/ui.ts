@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { CommitInfo, Toast, CredentialRequest } from '$lib/types';
+import type { BranchInfo, CommitInfo, Toast, CredentialRequest } from '$lib/types';
 
 export const selectedCommit = writable<CommitInfo | null>(null);
 export const selectedFile = writable<string | null>(null);
@@ -19,6 +19,8 @@ export const jumpToCommitId = writable<string | null>(null);
 export const showCredentialDialog = writable(false);
 export const showCloneDialog = writable(false);
 export const pendingCredentialRequest = writable<CredentialRequest | null>(null);
+export const showCheckoutRemoteDialog = writable(false);
+export const checkoutRemoteBranch = writable<BranchInfo | null>(null);
 
 let toastId = 0;
 

@@ -56,6 +56,9 @@ export const mergeBranch = (path: string, sourceBranch: string) =>
 export const resetToCommit = (path: string, commitId: string, mode: string) =>
   invoke<void>('reset_to_commit', { path, commitId, mode });
 
+export const checkoutRemoteBranch = (path: string, remoteBranch: string, localName: string, track: boolean) =>
+  invoke<void>('checkout_remote_branch', { path, remoteBranch, localName, track });
+
 // Remotes
 export const fetchRemote = (path: string, remoteName: string, credentials?: Credentials) =>
   invoke<void>('fetch_remote', { path, remoteName, credentials });

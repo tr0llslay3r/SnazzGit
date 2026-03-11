@@ -9,6 +9,7 @@
   import ThemePicker from '$lib/components/theme/ThemePicker.svelte';
   import BranchDialog from '$lib/components/branch/BranchDialog.svelte';
   import MergeDialog from '$lib/components/branch/MergeDialog.svelte';
+  import CheckoutRemoteDialog from '$lib/components/branch/CheckoutRemoteDialog.svelte';
   import StashDialog from '$lib/components/shared/StashDialog.svelte';
   import CredentialDialog from '$lib/components/shared/CredentialDialog.svelte';
   import CloneDialog from '$lib/components/shared/CloneDialog.svelte';
@@ -224,6 +225,7 @@
 <ThemePicker />
 <BranchDialog />
 <MergeDialog />
+<CheckoutRemoteDialog />
 <StashDialog />
 <CredentialDialog />
 <CloneDialog />

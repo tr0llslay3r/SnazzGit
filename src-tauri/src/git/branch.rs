@@ -67,6 +67,29 @@ pub fn merge_branch(path: &str, source_branch: &str) -> Result<String, GitError>
     Err(GitError::General("Merge analysis returned unexpected result".to_string()))
 }
 
+pub fn checkout_remote_branch(
+    path: &str,
+    remote_branch: &str,
+    local_name: &str,
+    track: bool,
+) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let branch = repo.find_branch(remote_branch, BranchType::Remote)?;
+    let commit = branch.get().peel_to_commit()?;
+    let mut local_branch = repo.branch(local_name, &commit, false)?;
+    if track {
+        local_branch.set_upstream(Some(remote_branch))?;
+    }
+    let (object, reference) = repo.revparse_ext(&format!("refs/heads/{}", local_name))?;
+    repo.checkout_tree(&object, None)?;
+    if let Some(reference) = reference {
+        repo.set_head(reference.name().unwrap_or(&format!("refs/heads/{}", local_name)))?;
+    } else {
+        repo.set_head(&format!("refs/heads/{}", local_name))?;
+    }
+    Ok(())
+}
+
 pub fn reset_to_commit(path: &str, commit_id: &str, mode: &str) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
     let oid = git2::Oid::from_str(commit_id)
