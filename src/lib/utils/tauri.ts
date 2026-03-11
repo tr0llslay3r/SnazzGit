@@ -10,6 +10,7 @@ import type {
   Theme,
   RecentRepo,
   ConflictFile,
+  Credentials,
 } from '$lib/types';
 
 // CLI
@@ -56,14 +57,25 @@ export const resetToCommit = (path: string, commitId: string, mode: string) =>
   invoke<void>('reset_to_commit', { path, commitId, mode });
 
 // Remotes
-export const fetchRemote = (path: string, remoteName: string) =>
-  invoke<void>('fetch_remote', { path, remoteName });
+export const fetchRemote = (path: string, remoteName: string, credentials?: Credentials) =>
+  invoke<void>('fetch_remote', { path, remoteName, credentials });
 
-export const pull = (path: string, remoteName: string) =>
-  invoke<string>('pull', { path, remoteName });
+export const pull = (path: string, remoteName: string, credentials?: Credentials) =>
+  invoke<string>('pull', { path, remoteName, credentials });
 
-export const push = (path: string, remoteName: string) =>
-  invoke<void>('push', { path, remoteName });
+export const push = (path: string, remoteName: string, credentials?: Credentials) =>
+  invoke<void>('push', { path, remoteName, credentials });
+
+// Clone
+export const cloneRepo = (url: string, path: string, credentials?: Credentials) =>
+  invoke<string>('clone_repo', { url, path, credentials });
+
+// Credentials
+export const storeCredentials = (url: string, username: string, password: string) =>
+  invoke<void>('store_credentials', { url, username, password });
+
+export const deleteStoredCredentials = (url: string, username: string) =>
+  invoke<void>('delete_stored_credentials', { url, username });
 
 // Diff
 export const getWorkingDiff = (path: string, filePath: string, staged: boolean) =>

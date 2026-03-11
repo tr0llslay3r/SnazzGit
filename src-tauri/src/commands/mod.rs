@@ -1,7 +1,9 @@
 pub mod blame;
 pub mod branches;
+pub mod clone;
 pub mod commits;
 pub mod conflict;
+pub mod credentials;
 pub mod diff;
 pub mod recent;
 pub mod remotes;

@@ -1,6 +1,7 @@
 use git2::Repository;
 use tauri::{AppHandle, Emitter};
 
+use super::credentials::{make_credential_callback, Credentials};
 use super::error::GitError;
 
 #[derive(Clone, serde::Serialize)]
@@ -15,13 +16,14 @@ pub struct ProgressPayload {
 pub fn fetch_remote(
     path: &str,
     remote_name: &str,
+    credentials: Option<Credentials>,
     app_handle: Option<&AppHandle>,
 ) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
     let mut remote = repo.find_remote(remote_name)?;
 
     let mut callbacks = git2::RemoteCallbacks::new();
-    setup_credentials(&mut callbacks);
+    callbacks.credentials(make_credential_callback(credentials));
 
     if let Some(handle) = app_handle {
         let handle = handle.clone();
@@ -50,9 +52,10 @@ pub fn fetch_remote(
 pub fn pull(
     path: &str,
     remote_name: &str,
+    credentials: Option<Credentials>,
     app_handle: Option<&AppHandle>,
 ) -> Result<String, GitError> {
-    fetch_remote(path, remote_name, app_handle)?;
+    fetch_remote(path, remote_name, credentials, app_handle)?;
 
     let repo = Repository::open(path)?;
     let head = repo.head()?;
@@ -92,6 +95,7 @@ pub fn pull(
 pub fn push(
     path: &str,
     remote_name: &str,
+    credentials: Option<Credentials>,
     app_handle: Option<&AppHandle>,
 ) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
@@ -104,7 +108,7 @@ pub fn push(
         .to_string();
 
     let mut callbacks = git2::RemoteCallbacks::new();
-    setup_credentials(&mut callbacks);
+    callbacks.credentials(make_credential_callback(credentials));
 
     if let Some(handle) = app_handle {
         let handle = handle.clone();
@@ -126,22 +130,4 @@ pub fn push(
     push_options.remote_callbacks(callbacks);
     remote.push(&[&refspec], Some(&mut push_options))?;
     Ok(())
-}
-
-fn setup_credentials(callbacks: &mut git2::RemoteCallbacks) {
-    callbacks.credentials(|_url, username_from_url, allowed_types| {
-        if allowed_types.contains(git2::CredentialType::SSH_KEY) {
-            let username = username_from_url.unwrap_or("git");
-            git2::Cred::ssh_key_from_agent(username)
-        } else if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-            // Try git credential helper
-            git2::Cred::credential_helper(
-                &git2::Config::open_default()?,
-                _url,
-                username_from_url,
-            )
-        } else {
-            git2::Cred::default()
-        }
-    });
 }

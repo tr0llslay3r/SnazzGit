@@ -137,3 +137,15 @@ export interface ConflictFile {
   our_label: string;
   their_label: string;
 }
+
+export interface Credentials {
+  username: string;
+  password: string;
+}
+
+export interface CredentialRequest {
+  operation: 'fetch' | 'pull' | 'push' | 'clone';
+  remoteName?: string;
+  url?: string;
+  clonePath?: string;
+}

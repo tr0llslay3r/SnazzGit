@@ -3,7 +3,7 @@ mod git;
 mod recent;
 mod theme;
 
-use commands::{blame, branches, commits, conflict, diff, recent as recent_cmd, remotes, repo, search, stash, status, theme as theme_cmd};
+use commands::{blame, branches, clone, commits, conflict, credentials, diff, recent as recent_cmd, remotes, repo, search, stash, status, theme as theme_cmd};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -41,6 +41,11 @@ pub fn run() {
             remotes::fetch_remote,
             remotes::pull,
             remotes::push,
+            // Clone
+            clone::clone_repo,
+            // Credentials
+            credentials::store_credentials,
+            credentials::delete_stored_credentials,
             // Diff
             diff::get_working_diff,
             diff::get_commit_diff,
