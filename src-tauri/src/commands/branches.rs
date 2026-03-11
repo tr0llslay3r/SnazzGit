@@ -45,6 +45,21 @@ pub async fn merge_branch(path: String, source_branch: String) -> Result<String,
 }
 
 #[tauri::command]
+pub async fn checkout_remote_branch(
+    path: String,
+    remote_branch: String,
+    local_name: String,
+    track: bool,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        branch::checkout_remote_branch(&path, &remote_branch, &local_name, track)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn reset_to_commit(path: String, commit_id: String, mode: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || branch::reset_to_commit(&path, &commit_id, &mode))
         .await

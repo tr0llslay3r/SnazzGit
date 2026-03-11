@@ -37,6 +37,7 @@ pub fn run() {
             branches::rename_branch,
             branches::merge_branch,
             branches::reset_to_commit,
+            branches::checkout_remote_branch,
             // Remotes
             remotes::fetch_remote,
             remotes::pull,

@@ -67,6 +67,29 @@ pub fn merge_branch(path: &str, source_branch: &str) -> Result<String, GitError>
     Err(GitError::General("Merge analysis returned unexpected result".to_string()))
 }
 
+pub fn checkout_remote_branch(
+    path: &str,
+    remote_branch: &str,
+    local_name: &str,
+    track: bool,
+) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let branch = repo.find_branch(remote_branch, BranchType::Remote)?;
+    let commit = branch.get().peel_to_commit()?;
+    let mut local_branch = repo.branch(local_name, &commit, false)?;
+    if track {
+        local_branch.set_upstream(Some(remote_branch))?;
+    }
+    let (object, reference) = repo.revparse_ext(&format!("refs/heads/{}", local_name))?;
+    repo.checkout_tree(&object, None)?;
+    if let Some(reference) = reference {
+        repo.set_head(reference.name().unwrap_or(&format!("refs/heads/{}", local_name)))?;
+    } else {
+        repo.set_head(&format!("refs/heads/{}", local_name))?;
+    }
+    Ok(())
+}
+
 pub fn reset_to_commit(path: &str, commit_id: &str, mode: &str) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
     let oid = git2::Oid::from_str(commit_id)
@@ -189,6 +212,120 @@ mod tests {
     fn test_reset_invalid_commit_id_errors() {
         let (_dir, path) = init_repo_with_commit();
         let result = reset_to_commit(&path, "not-a-valid-sha", "hard");
+        assert!(result.is_err());
+    }
+
+    /// Create a bare "remote" repo with a commit, then clone it so the clone
+    /// has `origin/master` as a remote branch. Returns (remote_dir, clone_dir, clone_path).
+    fn init_repo_with_remote() -> (tempfile::TempDir, tempfile::TempDir, String) {
+        // Create bare remote repo with one commit
+        let remote_dir = tempfile::TempDir::new().unwrap();
+        let remote_path = remote_dir.path().to_str().unwrap();
+        let remote_repo = git2::Repository::init_bare(remote_path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_id = {
+            let mut index = remote_repo.index().unwrap();
+            index.write_tree().unwrap()
+        };
+        {
+            let tree = remote_repo.find_tree(tree_id).unwrap();
+            remote_repo
+                .commit(Some("refs/heads/master"), &sig, &sig, "Initial commit", &tree, &[])
+                .unwrap();
+        }
+        {
+            let head_commit = remote_repo
+                .find_reference("refs/heads/master")
+                .unwrap()
+                .peel_to_commit()
+                .unwrap();
+            remote_repo.branch("feature-x", &head_commit, false).unwrap();
+        }
+        drop(remote_repo);
+
+        // Clone it
+        let clone_dir = tempfile::TempDir::new().unwrap();
+        let clone_path = clone_dir.path().to_str().unwrap().to_string();
+        git2::build::RepoBuilder::new()
+            .clone(remote_path, std::path::Path::new(&clone_path))
+            .unwrap();
+
+        (remote_dir, clone_dir, clone_path)
+    }
+
+    #[test]
+    fn test_checkout_remote_branch_basic() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        checkout_remote_branch(&path, "origin/feature-x", "feature-x", true).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let head = repo.head().unwrap();
+        assert_eq!(head.shorthand().unwrap(), "feature-x");
+        // Verify local branch exists
+        assert!(repo.find_branch("feature-x", git2::BranchType::Local).is_ok());
+    }
+
+    #[test]
+    fn test_checkout_remote_branch_with_tracking() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        checkout_remote_branch(&path, "origin/feature-x", "feature-x", true).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let branch = repo.find_branch("feature-x", git2::BranchType::Local).unwrap();
+        let upstream = branch.upstream().unwrap();
+        assert_eq!(upstream.name().unwrap().unwrap(), "origin/feature-x");
+    }
+
+    #[test]
+    fn test_checkout_remote_branch_without_tracking() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        checkout_remote_branch(&path, "origin/feature-x", "feature-x", false).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let branch = repo.find_branch("feature-x", git2::BranchType::Local).unwrap();
+        // No upstream should be set
+        assert!(branch.upstream().is_err());
+    }
+
+    #[test]
+    fn test_checkout_remote_branch_custom_local_name() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        checkout_remote_branch(&path, "origin/feature-x", "my-local-name", true).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let head = repo.head().unwrap();
+        assert_eq!(head.shorthand().unwrap(), "my-local-name");
+        assert!(repo.find_branch("my-local-name", git2::BranchType::Local).is_ok());
+    }
+
+    #[test]
+    fn test_checkout_remote_branch_points_to_same_commit() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        let repo = git2::Repository::open(&path).unwrap();
+        let remote_oid = repo
+            .find_branch("origin/feature-x", git2::BranchType::Remote)
+            .unwrap()
+            .get()
+            .target()
+            .unwrap();
+        drop(repo);
+
+        checkout_remote_branch(&path, "origin/feature-x", "feature-x", false).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let local_oid = repo.head().unwrap().target().unwrap();
+        assert_eq!(local_oid, remote_oid);
+    }
+
+    #[test]
+    fn test_checkout_remote_branch_nonexistent_fails() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        let result = checkout_remote_branch(&path, "origin/no-such-branch", "local", true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_checkout_remote_branch_duplicate_local_name_fails() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        // First checkout creates the local branch
+        checkout_remote_branch(&path, "origin/feature-x", "feature-x", false).unwrap();
+        // Second checkout with same local name should fail
+        let result = checkout_remote_branch(&path, "origin/feature-x", "feature-x", false);
         assert!(result.is_err());
     }
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
   import TreeView from '$lib/components/shared/TreeView.svelte';
   import { repoInfo, localBranches, remoteBranches, stashEntries, workingStatus, commits, refreshAll, refreshStatus, refreshStashes } from '$lib/stores/repo';
-  import { showBranchDialog, showStashDialog, selectedCommit, showStagingArea, selectedFile, addToast, jumpToCommitId } from '$lib/stores/ui';
+  import { showBranchDialog, showStashDialog, selectedCommit, showStagingArea, selectedFile, addToast, jumpToCommitId, showCheckoutRemoteDialog, checkoutRemoteBranch } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
 
@@ -161,6 +161,33 @@
     }
   }
 
+  function onRemoteNavigate(node: { label: string; data?: unknown }) {
+    if (!node.data) return;
+    const branch = node.data as { commit_id: string };
+    if (branch.commit_id) {
+      $jumpToCommitId = branch.commit_id;
+    }
+  }
+
+  function onRemoteSelect(node: { label: string; data?: unknown }) {
+    if (!node.data) return;
+    const branch = node.data as { name: string; is_head: boolean; is_remote: boolean; upstream: string | null; commit_id: string };
+    $checkoutRemoteBranch = branch;
+    $showCheckoutRemoteDialog = true;
+  }
+
+  function onRemoteContext(node: { label: string; data?: unknown }, e: MouseEvent) {
+    if (!$repoInfo || !node.data) return;
+    const branch = node.data as { name: string; commit_id: string };
+    const items: ContextMenuEntry[] = [
+      { label: 'Checkout...', action: () => {
+        $checkoutRemoteBranch = node.data as any;
+        $showCheckoutRemoteDialog = true;
+      }},
+    ];
+    showContextMenu(e.clientX, e.clientY, items);
+  }
+
   async function onBranchSelect(node: { label: string; data?: unknown }) {
     if (!$repoInfo) return;
     const branch = node.data as { name: string; is_head: boolean } | undefined;
@@ -208,7 +235,7 @@
 
     <div class="sidebar-section">
       <div class="section-header"><span>Remotes</span></div>
-      <TreeView nodes={remoteNodes()} />
+      <TreeView nodes={remoteNodes()} onSelect={onRemoteNavigate} onDblSelect={onRemoteSelect} onContextMenu={onRemoteContext} />
     </div>
 
     <div class="sidebar-section">
