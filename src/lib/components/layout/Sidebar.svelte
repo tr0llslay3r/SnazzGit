@@ -11,24 +11,55 @@
     }
   });
 
+  interface TreeNode {
+    label: string;
+    icon?: string;
+    children?: TreeNode[];
+    data?: unknown;
+  }
+
+  function buildTree(branches: typeof $localBranches, iconFn?: (b: typeof $localBranches[0]) => string): TreeNode[] {
+    const root: TreeNode[] = [];
+    const folders = new Map<string, TreeNode>();
+
+    for (const b of branches) {
+      const parts = b.name.split('/');
+      if (parts.length === 1) {
+        root.push({ label: b.name, icon: iconFn?.(b) ?? '', data: b });
+        continue;
+      }
+
+      let parentList = root;
+      let pathSoFar = '';
+      for (let i = 0; i < parts.length - 1; i++) {
+        pathSoFar += (pathSoFar ? '/' : '') + parts[i];
+        let folder = folders.get(pathSoFar);
+        if (!folder) {
+          folder = { label: parts[i], children: [] };
+          folders.set(pathSoFar, folder);
+          parentList.push(folder);
+        }
+        parentList = folder.children!;
+      }
+      parentList.push({ label: parts[parts.length - 1], icon: iconFn?.(b) ?? '', data: b });
+    }
+    return root;
+  }
+
   function branchNodes() {
-    return $localBranches.map((b) => ({
-      label: b.name,
-      icon: b.is_head ? '\u25CF' : '',
-      data: b,
-    }));
+    return buildTree($localBranches, (b) => b.is_head ? '\u25CF' : '');
   }
 
   function remoteNodes() {
-    const byRemote: Record<string, { label: string; data: unknown }[]> = {};
+    const byRemote: Record<string, typeof $remoteBranches> = {};
     for (const b of $remoteBranches) {
       const [remote, ...rest] = b.name.split('/');
       if (!byRemote[remote]) byRemote[remote] = [];
-      byRemote[remote].push({ label: rest.join('/'), data: b });
+      byRemote[remote].push({ ...b, name: rest.join('/') });
     }
-    return Object.entries(byRemote).map(([name, children]) => ({
+    return Object.entries(byRemote).map(([name, branches]) => ({
       label: name,
-      children,
+      children: buildTree(branches),
     }));
   }
 
@@ -150,14 +181,10 @@
   }
 
   function onBranchNavigate(node: { label: string; data?: unknown }) {
-    const branchName = node.label;
-    const commit = $commits.find((c) =>
-      c.refs.some((r) =>
-        (r.ref_type === 'LocalBranch' || r.ref_type === 'RemoteBranch') && r.name === branchName
-      )
-    );
-    if (commit) {
-      $jumpToCommitId = commit.id;
+    if (!node.data) return;
+    const branch = node.data as { name: string; commit_id: string };
+    if (branch.commit_id) {
+      $jumpToCommitId = branch.commit_id;
     }
   }
 
@@ -230,7 +257,7 @@
         <span>Branches</span>
         <button class="section-action" onclick={() => $showBranchDialog = true} title="New branch">+</button>
       </div>
-      <TreeView nodes={branchNodes()} onSelect={onBranchNavigate} onDblSelect={onBranchSelect} onContextMenu={onBranchContext} />
+      <TreeView nodes={branchNodes()} onSelect={onBranchNavigate} onDblSelect={onBranchSelect} onContextMenu={onBranchContext} defaultExpanded={true} />
     </div>
 
     <div class="sidebar-section">
