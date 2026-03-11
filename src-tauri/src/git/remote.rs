@@ -131,3 +131,180 @@ pub fn push(
     remote.push(&[&refspec], Some(&mut push_options))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_repo_with_commit() -> (tempfile::TempDir, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        let repo = git2::Repository::init(&path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "Initial commit", &tree, &[]).unwrap();
+        (dir, path)
+    }
+
+    fn add_commit(path: &str, msg: &str) {
+        let repo = git2::Repository::open(path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[&parent]).unwrap();
+    }
+
+    /// Set up a local "remote" by creating a bare repo and adding it as a remote
+    /// to the working repo. Returns (working_dir, working_path, bare_dir, bare_path).
+    fn setup_local_remote() -> (tempfile::TempDir, String, tempfile::TempDir, String) {
+        // Create bare repo to act as remote
+        let bare_dir = tempfile::TempDir::new().unwrap();
+        let bare_path = bare_dir.path().to_str().unwrap().to_string();
+        git2::Repository::init_bare(&bare_path).unwrap();
+
+        // Create working repo with a commit
+        let (work_dir, work_path) = init_repo_with_commit();
+
+        // Add bare repo as "origin" remote
+        let repo = git2::Repository::open(&work_path).unwrap();
+        repo.remote("origin", &bare_path).unwrap();
+
+        (work_dir, work_path, bare_dir, bare_path)
+    }
+
+    // --- fetch_remote tests ---
+
+    #[test]
+    fn test_fetch_invalid_path() {
+        let result = fetch_remote("/nonexistent/path", "origin", None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fetch_invalid_remote_name() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = fetch_remote(&path, "nonexistent", None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fetch_local_remote() {
+        let (_work_dir, work_path, _bare_dir, _bare_path) = setup_local_remote();
+
+        // Push initial commit to bare repo first
+        push(&work_path, "origin", None, None).unwrap();
+
+        // Fetch should succeed against local bare repo
+        let result = fetch_remote(&work_path, "origin", None, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_fetch_with_none_credentials() {
+        let (_work_dir, work_path, _bare_dir, _bare_path) = setup_local_remote();
+        push(&work_path, "origin", None, None).unwrap();
+
+        // Fetching a local remote with None credentials should work fine
+        let result = fetch_remote(&work_path, "origin", None, None);
+        assert!(result.is_ok());
+    }
+
+    // --- push tests ---
+
+    #[test]
+    fn test_push_to_local_remote() {
+        let (_work_dir, work_path, _bare_dir, bare_path) = setup_local_remote();
+
+        // Push should succeed to local bare repo
+        push(&work_path, "origin", None, None).unwrap();
+
+        // Verify the commit landed in the bare repo
+        let bare_repo = git2::Repository::open(&bare_path).unwrap();
+        let head = bare_repo.head().unwrap();
+        // Default branch name varies by system (main or master)
+        let branch = head.shorthand().unwrap();
+        assert!(branch == "main" || branch == "master");
+    }
+
+    #[test]
+    fn test_push_invalid_remote() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = push(&path, "nonexistent", None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_push_no_head_errors() {
+        // An empty repo (no commits) has no HEAD to push
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        let repo = git2::Repository::init(&path).unwrap();
+
+        let bare_dir = tempfile::TempDir::new().unwrap();
+        let bare_path = bare_dir.path().to_str().unwrap().to_string();
+        git2::Repository::init_bare(&bare_path).unwrap();
+        repo.remote("origin", &bare_path).unwrap();
+
+        let result = push(&path, "origin", None, None);
+        assert!(result.is_err());
+    }
+
+    // --- pull tests ---
+
+    #[test]
+    fn test_pull_up_to_date() {
+        let (_work_dir, work_path, _bare_dir, _bare_path) = setup_local_remote();
+
+        // Push, then pull — should be up to date
+        push(&work_path, "origin", None, None).unwrap();
+        let result = pull(&work_path, "origin", None, None).unwrap();
+        assert_eq!(result, "Already up to date");
+    }
+
+    #[test]
+    fn test_pull_fast_forward() {
+        let (_work_dir, work_path, _bare_dir, bare_path) = setup_local_remote();
+
+        // Push initial commit
+        push(&work_path, "origin", None, None).unwrap();
+
+        // Create a second clone, add a commit, push it to bare
+        let clone_dir = tempfile::TempDir::new().unwrap();
+        let clone_path = clone_dir.path().to_str().unwrap().to_string();
+        git2::build::RepoBuilder::new()
+            .clone(&bare_path, std::path::Path::new(&clone_path))
+            .unwrap();
+        add_commit(&clone_path, "New commit from clone");
+        push(&clone_path, "origin", None, None).unwrap();
+
+        // Pull from the original working repo — should fast-forward
+        let result = pull(&work_path, "origin", None, None).unwrap();
+        assert_eq!(result, "Fast-forward");
+    }
+
+    #[test]
+    fn test_pull_invalid_remote() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = pull(&path, "nonexistent", None, None);
+        assert!(result.is_err());
+    }
+
+    // --- ProgressPayload ---
+
+    #[test]
+    fn test_progress_payload_serialization() {
+        let payload = ProgressPayload {
+            received_objects: 10,
+            total_objects: 20,
+            indexed_deltas: 5,
+            total_deltas: 10,
+            received_bytes: 4096,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(json.contains("\"received_objects\":10"));
+        assert!(json.contains("\"total_objects\":20"));
+        assert!(json.contains("\"received_bytes\":4096"));
+    }
+}

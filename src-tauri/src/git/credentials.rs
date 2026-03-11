@@ -170,11 +170,21 @@ pub fn delete_credentials(remote_url: &str, username: &str) -> Result<(), GitErr
 mod tests {
     use super::*;
 
+    // --- extract_host tests ---
+
     #[test]
     fn test_extract_host_https() {
         assert_eq!(
             extract_host("https://github.com/user/repo.git"),
             Some("github.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_host_http() {
+        assert_eq!(
+            extract_host("http://gitlab.example.com/group/repo.git"),
+            Some("gitlab.example.com".to_string())
         );
     }
 
@@ -192,5 +202,212 @@ mod tests {
             extract_host("ssh://git@gitlab.com/user/repo.git"),
             Some("gitlab.com".to_string())
         );
+    }
+
+    #[test]
+    fn test_extract_host_with_port() {
+        // https with port — host:port is returned (acceptable)
+        let result = extract_host("https://git.example.com:8443/repo.git");
+        assert!(result.is_some());
+        assert!(result.unwrap().starts_with("git.example.com"));
+    }
+
+    #[test]
+    fn test_extract_host_invalid_url() {
+        assert_eq!(extract_host("not-a-url"), None);
+        assert_eq!(extract_host(""), None);
+        assert_eq!(extract_host("ftp://server/repo"), None);
+    }
+
+    // --- find_ssh_key tests ---
+
+    #[test]
+    fn test_find_ssh_key_returns_existing_key_or_none() {
+        // This test verifies find_ssh_key doesn't panic and returns a valid path if found
+        let result = find_ssh_key();
+        if let Some(ref path) = result {
+            assert!(path.exists());
+            let name = path.file_name().unwrap().to_str().unwrap();
+            assert!(
+                name == "id_ed25519" || name == "id_ecdsa" || name == "id_rsa",
+                "unexpected key name: {}",
+                name
+            );
+        }
+        // If None, that's fine — no SSH keys on this machine
+    }
+
+    #[test]
+    fn test_find_ssh_key_preference_order() {
+        // If multiple keys exist, ed25519 should be preferred over rsa
+        let result = find_ssh_key();
+        if let Some(ref path) = result {
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap();
+            let ssh_dir = std::path::PathBuf::from(home).join(".ssh");
+            let name = path.file_name().unwrap().to_str().unwrap();
+            // If ed25519 exists, it should be the one returned
+            if ssh_dir.join("id_ed25519").exists() {
+                assert_eq!(name, "id_ed25519");
+            }
+        }
+    }
+
+    // --- make_credential_callback tests ---
+
+    #[test]
+    fn test_callback_with_creds_returns_userpass_for_https() {
+        let creds = Credentials {
+            username: "testuser".into(),
+            password: "testpass".into(),
+        };
+        let mut cb = make_credential_callback(Some(creds));
+        let result = cb(
+            "https://github.com/user/repo.git",
+            None,
+            git2::CredentialType::USER_PASS_PLAINTEXT,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_callback_https_prevents_infinite_retry() {
+        let creds = Credentials {
+            username: "testuser".into(),
+            password: "testpass".into(),
+        };
+        let mut cb = make_credential_callback(Some(creds));
+        // First call succeeds
+        let first = cb(
+            "https://github.com/user/repo.git",
+            None,
+            git2::CredentialType::USER_PASS_PLAINTEXT,
+        );
+        assert!(first.is_ok());
+        // Second call should fail (prevents infinite retry)
+        let second = cb(
+            "https://github.com/user/repo.git",
+            None,
+            git2::CredentialType::USER_PASS_PLAINTEXT,
+        );
+        assert!(second.is_err());
+        let err_msg = second.err().unwrap().message().to_string();
+        assert!(err_msg.contains("Authentication failed"));
+    }
+
+    #[test]
+    fn test_callback_without_creds_https_tries_credential_helper() {
+        // Without explicit creds, it falls through to credential helper
+        // which will likely fail in test env — but should not panic
+        let mut cb = make_credential_callback(None);
+        let result = cb(
+            "https://github.com/user/repo.git",
+            Some("user"),
+            git2::CredentialType::USER_PASS_PLAINTEXT,
+        );
+        // May succeed or fail depending on git config — just ensure no panic
+        // and that a second call is blocked
+        let _ = result;
+        let second = cb(
+            "https://github.com/user/repo.git",
+            Some("user"),
+            git2::CredentialType::USER_PASS_PLAINTEXT,
+        );
+        assert!(second.is_err());
+    }
+
+    #[test]
+    fn test_callback_ssh_exhausts_after_attempts() {
+        let mut cb = make_credential_callback(None);
+        // First SSH call: tries agent (may fail), then disk key
+        let _ = cb(
+            "git@github.com:user/repo.git",
+            Some("git"),
+            git2::CredentialType::SSH_KEY,
+        );
+        // Second SSH call: may try disk key
+        let _ = cb(
+            "git@github.com:user/repo.git",
+            Some("git"),
+            git2::CredentialType::SSH_KEY,
+        );
+        // Third SSH call: must be exhausted
+        let third = cb(
+            "git@github.com:user/repo.git",
+            Some("git"),
+            git2::CredentialType::SSH_KEY,
+        );
+        assert!(third.is_err());
+        assert!(third.err().unwrap().message().contains("exhausted"));
+    }
+
+    #[test]
+    fn test_callback_ssh_default_username() {
+        // When username_from_url is None, should default to "git"
+        let mut cb = make_credential_callback(None);
+        // Just ensure it doesn't panic with None username
+        let _ = cb(
+            "git@github.com:user/repo.git",
+            None,
+            git2::CredentialType::SSH_KEY,
+        );
+    }
+
+    #[test]
+    fn test_callback_default_cred_type() {
+        // For unknown credential types, should return default
+        let mut cb = make_credential_callback(None);
+        let result = cb(
+            "some://url",
+            None,
+            git2::CredentialType::DEFAULT,
+        );
+        // git2::Cred::default() may or may not succeed depending on platform
+        let _ = result;
+    }
+
+    // --- Credentials serialization ---
+
+    #[test]
+    fn test_credentials_serialize_deserialize() {
+        let creds = Credentials {
+            username: "user".into(),
+            password: "pass".into(),
+        };
+        let json = serde_json::to_string(&creds).unwrap();
+        let deserialized: Credentials = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.username, "user");
+        assert_eq!(deserialized.password, "pass");
+    }
+
+    #[test]
+    fn test_credentials_optional_deserialization() {
+        // Ensures Option<Credentials> deserializes None from missing field
+        // (important for backwards-compat on remote commands)
+        let val: Option<Credentials> = serde_json::from_str("null").unwrap();
+        assert!(val.is_none());
+    }
+
+    // --- store/delete credential error paths ---
+
+    #[test]
+    fn test_store_credentials_invalid_url() {
+        let creds = Credentials {
+            username: "user".into(),
+            password: "pass".into(),
+        };
+        let result = store_credentials("not-a-url", &creds);
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("Cannot extract host"));
+    }
+
+    #[test]
+    fn test_delete_credentials_invalid_url() {
+        let result = delete_credentials("not-a-url", "user");
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("Cannot extract host"));
     }
 }
