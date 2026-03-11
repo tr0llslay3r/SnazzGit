@@ -196,6 +196,7 @@
   .commit-row.current {
     background: color-mix(in srgb, var(--success) 12%, transparent);
     border-left: 2px solid var(--success);
+    font-weight: 600;
   }
   .commit-row.current:hover {
     background: color-mix(in srgb, var(--success) 20%, transparent);
