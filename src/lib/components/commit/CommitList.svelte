@@ -107,6 +107,10 @@
       default: return '';
     }
   }
+
+  function isCurrentCommit(commit: CommitInfo): boolean {
+    return commit.refs.some((r) => r.ref_type === 'Head');
+  }
 </script>
 
 <div class="commit-list-wrapper" bind:this={container} onscroll={onScroll}>
@@ -121,6 +125,7 @@
             <button
               class="commit-row"
               class:selected={$selectedCommit?.id === commit.id}
+              class:current={isCurrentCommit(commit)}
               onclick={() => selectCommit(commit)}
               oncontextmenu={(e) => onCommitContext(e, commit)}
               style="height: {ROW_HEIGHT}px"
@@ -187,6 +192,16 @@
   .commit-row.selected {
     background: color-mix(in srgb, var(--accent) 20%, transparent);
     border-bottom-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .commit-row.current {
+    background: color-mix(in srgb, var(--success) 12%, transparent);
+    border-left: 2px solid var(--success);
+  }
+  .commit-row.current:hover {
+    background: color-mix(in srgb, var(--success) 20%, transparent);
+  }
+  .commit-row.current.selected {
+    background: color-mix(in srgb, var(--accent) 20%, color-mix(in srgb, var(--success) 12%, transparent));
   }
   .commit-hash {
     font-family: monospace;
