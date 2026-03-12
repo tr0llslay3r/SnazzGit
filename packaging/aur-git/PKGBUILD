@@ -6,7 +6,7 @@ pkgdesc="A snazzy cross-platform Git GUI client (built from source)"
 arch=('x86_64')
 url="https://github.com/tr0llslay3r/SnazzGit"
 license=('MIT')
-depends=('webkit2gtk-4.1' 'gtk3' 'glib2' 'openssl')
+depends=('webkit2gtk-4.1' 'gtk3' 'glib2' 'openssl' 'libgit2')
 makedepends=('rust' 'cargo' 'nodejs' 'npm' 'cmake' 'pkgconf' 'patchelf' 'librsvg' 'libappindicator-gtk3')
 provides=('snazzgit')
 conflicts=('snazzgit' 'snazzgit-bin')
@@ -23,6 +23,7 @@ build() {
   npm ci
   npm run build
   cd src-tauri
+  export LIBGIT2_NO_VENDOR=1
   cargo build --release
 }
 
