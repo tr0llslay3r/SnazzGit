@@ -24,7 +24,30 @@ cd src-tauri && cargo build
 cd src-tauri && cargo clippy
 ```
 
-There are no tests in this project currently.
+## Testing
+
+Run Rust tests:
+```bash
+cd src-tauri && cargo test
+```
+
+Run with coverage:
+```bash
+cd src-tauri && cargo llvm-cov --lib
+```
+
+Run TypeScript tests:
+```bash
+npm test
+```
+
+### Rust test structure
+
+- **`git/`** — Unit tests embedded in each module via `#[cfg(test)]`. Use `tempfile::TempDir` + `git2::Repository::init()` for isolated repos.
+- **`commands/`** — Each command file has a `#[cfg(test)]` block. Command functions are plain `async fn` and can be called directly with `#[tokio::test]` — no Tauri runtime needed.
+- **`commands/remotes.rs`** and **`commands/clone.rs`** — Not unit-tested (require `AppHandle` for progress events).
+
+When writing new command tests, use the same `init_repo_with_commit()` helper pattern already present in each file.
 
 ## Architecture
 
