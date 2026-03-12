@@ -7,7 +7,7 @@ arch=('x86_64')
 url="https://github.com/tr0llslay3r/SnazzGit"
 license=('MIT')
 depends=('webkit2gtk-4.1' 'gtk3' 'glib2' 'openssl')
-makedepends=('rust' 'cargo' 'nodejs' 'npm' 'patchelf' 'librsvg' 'libappindicator-gtk3')
+makedepends=('rust' 'cargo' 'nodejs' 'npm' 'cmake' 'pkgconf' 'patchelf' 'librsvg' 'libappindicator-gtk3')
 provides=('snazzgit')
 conflicts=('snazzgit' 'snazzgit-bin')
 source=("git+${url}.git")
@@ -21,7 +21,9 @@ pkgver() {
 build() {
   cd SnazzGit
   npm ci
-  npx tauri build --bundles none
+  npm run build
+  cd src-tauri
+  cargo build --release
 }
 
 package() {
