@@ -30,13 +30,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_recent_repos_ok() {
-        // Always succeeds even if the config file doesn't exist yet
+        let home = tempfile::TempDir::new().unwrap();
+        unsafe { std::env::set_var("HOME", home.path()) };
         let result = load_recent_repos().await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_add_and_remove_recent_repo() {
+        let home = tempfile::TempDir::new().unwrap();
+        unsafe { std::env::set_var("HOME", home.path()) };
+
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().to_str().unwrap().to_string();
 
@@ -53,16 +57,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_recent_repo_deduplicates() {
+        let home = tempfile::TempDir::new().unwrap();
+        unsafe { std::env::set_var("HOME", home.path()) };
+
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().to_str().unwrap().to_string();
 
         add_recent_repo(path.clone(), "First".into()).await.unwrap();
         let repos = add_recent_repo(path.clone(), "Updated".into()).await.unwrap();
-        // Should appear only once
         assert_eq!(repos.iter().filter(|r| r.path == path).count(), 1);
-        // Should be at the front
         assert_eq!(repos[0].path, path);
-        // Clean up
-        remove_recent_repo(path).await.unwrap();
     }
 }
