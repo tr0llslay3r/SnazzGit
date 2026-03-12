@@ -18,6 +18,11 @@ A snazzy, cross-platform Git GUI client built with [Tauri 2](https://tauri.app),
 - **Blame** -- per-line blame annotations
 - **Search** -- live search commits by message, author, or SHA (Ctrl+K)
 - **Gitignore** -- add files, patterns, or directories to `.gitignore` from the context menu
+- **Merge** -- merge branches with conflict detection
+- **Conflict Resolution** -- 3-way merge editor for resolving conflicts
+- **Clone** -- clone repositories with progress tracking
+- **Recent Repositories** -- quick access to recently opened repos
+
 ## Theming
 
 SnazzGit ships with 4 built-in themes -- **Dark**, **Lollipop**, **Neon**, and **Classic** -- and includes a full theme editor with live preview. Every color in the UI is driven by CSS custom properties, so you have complete control over the look and feel.
@@ -31,6 +36,21 @@ Create your own themes in the editor and they're automatically saved to `~/.conf
 | `Ctrl+K` | Search commits |
 | `Ctrl+B` | New branch |
 | `Ctrl+Enter` | Commit (when in commit message box) |
+| `Ctrl+A` | Select all unstaged changes |
+
+## Installation
+
+### Arch Linux / CachyOS (AUR)
+
+- [`snazzgit-bin`](https://aur.archlinux.org/packages/snazzgit-bin) -- prebuilt binary package
+- [`snazzgit-git`](https://aur.archlinux.org/packages/snazzgit-git) -- build from source
+
+Install with your preferred AUR helper:
+
+```bash
+yay -S snazzgit-bin    # or snazzgit-git
+paru -S snazzgit-bin   # or snazzgit-git
+```
 
 ## Building from Source
 
@@ -83,6 +103,7 @@ src-tauri/              # Backend (Rust)
   src/
     git/                # Pure git2 logic (no Tauri dependency)
     commands/           # Tauri IPC command handlers
+packaging/              # Distribution packaging (AUR, .desktop)
 ```
 
 ## Privacy
