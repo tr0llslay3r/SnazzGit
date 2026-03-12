@@ -140,4 +140,41 @@ mod tests {
         // apply keeps the stash entry
         assert_eq!(list.len(), 1);
     }
+
+    #[test]
+    fn test_stash_pop_invalid_index_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        stage_new_file(&path, "file.txt", "content");
+        stash_save(&path, "only stash").unwrap();
+        let result = stash_pop(&path, 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stash_drop_invalid_index_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        stage_new_file(&path, "file.txt", "content");
+        stash_save(&path, "only stash").unwrap();
+        let result = stash_drop(&path, 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stash_apply_invalid_index_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        stage_new_file(&path, "file.txt", "content");
+        stash_save(&path, "only stash").unwrap();
+        let result = stash_apply(&path, 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stash_save_empty_message_defaults_to_wip() {
+        let (_dir, path) = init_repo_with_commit();
+        stage_new_file(&path, "file.txt", "content");
+        stash_save(&path, "").unwrap();
+        let list = stash_list(&path).unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(list[0].message.contains("WIP"));
+    }
 }

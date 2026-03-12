@@ -272,4 +272,64 @@ mod tests {
         delete_file(&path, "to_delete.txt").unwrap();
         assert!(!std::path::Path::new(&path).join("to_delete.txt").exists());
     }
+
+    /// Write, stage, and commit a file on top of the existing HEAD.
+    fn commit_file(repo_path: &str, name: &str, content: &str) {
+        write_file(repo_path, name, content);
+        stage_file(repo_path, name).unwrap();
+        let repo = git2::Repository::open(repo_path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "add file", &tree, &[&parent])
+            .unwrap();
+    }
+
+    #[test]
+    fn test_unstage_file_moves_back() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "tracked.txt", "original");
+        write_file(&path, "tracked.txt", "modified");
+        stage_file(&path, "tracked.txt").unwrap();
+        assert!(!get_status(&path).unwrap().staged.is_empty());
+        unstage_file(&path, "tracked.txt").unwrap();
+        let status = get_status(&path).unwrap();
+        assert!(status.staged.is_empty());
+        assert!(status.unstaged.iter().any(|f| f.path == "tracked.txt"));
+    }
+
+    #[test]
+    fn test_unstage_all_clears_staged() {
+        let (_dir, path) = init_repo_with_commit();
+        write_file(&path, "a.txt", "a");
+        write_file(&path, "b.txt", "b");
+        stage_file(&path, "a.txt").unwrap();
+        stage_file(&path, "b.txt").unwrap();
+        assert_eq!(get_status(&path).unwrap().staged.len(), 2);
+        unstage_all(&path).unwrap();
+        assert!(get_status(&path).unwrap().staged.is_empty());
+    }
+
+    #[test]
+    fn test_discard_file_reverts_to_head() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "revert.txt", "original content");
+        write_file(&path, "revert.txt", "changed content");
+        discard_file(&path, "revert.txt").unwrap();
+        let content =
+            std::fs::read_to_string(std::path::Path::new(&path).join("revert.txt")).unwrap();
+        assert_eq!(content, "original content");
+    }
+
+    #[test]
+    fn test_get_status_modified_unstaged() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "mod.txt", "original");
+        write_file(&path, "mod.txt", "changed");
+        let status = get_status(&path).unwrap();
+        let modified = status.unstaged.iter().find(|f| f.path == "mod.txt");
+        assert!(modified.is_some());
+        assert!(matches!(modified.unwrap().status, FileStatusType::Modified));
+    }
 }

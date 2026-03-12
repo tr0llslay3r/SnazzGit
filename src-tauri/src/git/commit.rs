@@ -265,4 +265,58 @@ mod tests {
         let result = get_commit_detail(&path, "0000000000000000000000000000000000000000");
         assert!(result.is_err());
     }
+
+    /// Creates a repo with a merge commit: root → main-tip + root → feat-tip → merge.
+    fn init_repo_with_merge_commit() -> (tempfile::TempDir, String, git2::Oid) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        let repo = git2::Repository::init(&path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+
+        let root_oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "Root", &tree, &[])
+            .unwrap();
+        let root_commit = repo.find_commit(root_oid).unwrap();
+
+        let main_oid = repo
+            .commit(Some("HEAD"), &sig, &sig, "Main", &tree, &[&root_commit])
+            .unwrap();
+        let main_commit = repo.find_commit(main_oid).unwrap();
+
+        // Feature commit branched from root, does not advance HEAD
+        let feat_oid = repo
+            .commit(None, &sig, &sig, "Feature", &tree, &[&root_commit])
+            .unwrap();
+        let feat_commit = repo.find_commit(feat_oid).unwrap();
+
+        let merge_oid = repo
+            .commit(
+                Some("HEAD"),
+                &sig,
+                &sig,
+                "Merge",
+                &tree,
+                &[&main_commit, &feat_commit],
+            )
+            .unwrap();
+
+        (dir, path, merge_oid)
+    }
+
+    #[test]
+    fn test_load_commits_merge_commit_has_two_parents() {
+        let (_dir, path, _) = init_repo_with_merge_commit();
+        let commits = load_commits(&path, 100, 0).unwrap();
+        let merge = commits.iter().find(|c| c.summary == "Merge").unwrap();
+        assert_eq!(merge.parent_ids.len(), 2);
+    }
+
+    #[test]
+    fn test_get_commit_detail_merge_commit_shows_both_parents() {
+        let (_dir, path, merge_oid) = init_repo_with_merge_commit();
+        let detail = get_commit_detail(&path, &merge_oid.to_string()).unwrap();
+        assert_eq!(detail.parent_ids.len(), 2);
+    }
 }

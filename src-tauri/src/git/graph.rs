@@ -229,4 +229,51 @@ mod tests {
         let rows = compute_graph(&commits);
         assert_eq!(rows[0].commit_id, "myid123");
     }
+
+    #[test]
+    fn test_diamond_merge_pattern() {
+        // D merges B and C; B and C both branch from A
+        let commits = vec![
+            make_commit("D", vec!["B", "C"]),
+            make_commit("B", vec!["A"]),
+            make_commit("C", vec!["A"]),
+            make_commit("A", vec![]),
+        ];
+        let rows = compute_graph(&commits);
+        assert_eq!(rows.len(), 4);
+        let d_row = &rows[0];
+        assert_eq!(d_row.commit_id, "D");
+        assert_eq!(d_row.edges.len(), 2);
+        // Intermediate rows use multiple columns
+        let max_cols = rows.iter().map(|r| r.num_columns).max().unwrap();
+        assert!(max_cols > 1);
+    }
+
+    #[test]
+    fn test_octopus_merge_three_parents() {
+        // D has three parents: A, B, C
+        let commits = vec![
+            make_commit("D", vec!["A", "B", "C"]),
+            make_commit("A", vec![]),
+            make_commit("B", vec![]),
+            make_commit("C", vec![]),
+        ];
+        let rows = compute_graph(&commits);
+        assert_eq!(rows.len(), 4);
+        let d_row = &rows[0];
+        assert_eq!(d_row.commit_id, "D");
+        // D must have edges to all 3 parents
+        assert_eq!(d_row.edges.len(), 3);
+    }
+
+    #[test]
+    fn test_missing_parent_handled_gracefully() {
+        // X's parent "ghost" is not present in the input slice
+        let commits = vec![make_commit("X", vec!["ghost"])];
+        let rows = compute_graph(&commits);
+        // Must not panic and X must be in output with no edges
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].commit_id, "X");
+        assert!(rows[0].edges.is_empty());
+    }
 }

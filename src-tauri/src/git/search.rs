@@ -143,4 +143,23 @@ mod tests {
         assert!(!by_sha.is_empty());
         assert!(by_sha.iter().any(|c| c.id == all[0].id));
     }
+
+    #[test]
+    fn test_search_empty_query_matches_all_commits() {
+        let (_dir, path) = init_repo_with_commits();
+        // Empty string is a substring of every string, so all commits match
+        let results = search_commits(&path, "", 10).unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_search_results_are_newest_first() {
+        let (_dir, path) = init_repo_with_commits();
+        let results = search_commits(&path, "", 10).unwrap();
+        assert_eq!(results.len(), 3);
+        // author_time must be non-ascending (newest first)
+        for window in results.windows(2) {
+            assert!(window[0].author_time >= window[1].author_time);
+        }
+    }
 }
