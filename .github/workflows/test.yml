@@ -44,11 +44,12 @@ jobs:
         working-directory: src-tauri
         run: cargo llvm-cov --lib --no-run --text
 
-      - name: Upload Rust LCOV report
-        uses: actions/upload-artifact@v4
+      - name: Upload Rust coverage to Codecov
+        uses: codecov/codecov-action@v4
         with:
-          name: rust-coverage
-          path: lcov-rust.info
+          files: lcov-rust.info
+          flags: rust
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   typescript-tests:
     name: TypeScript unit tests
@@ -71,8 +72,9 @@ jobs:
       - name: Run TypeScript tests with coverage
         run: npm run test:coverage
 
-      - name: Upload TypeScript coverage report
-        uses: actions/upload-artifact@v4
+      - name: Upload TypeScript coverage to Codecov
+        uses: codecov/codecov-action@v4
         with:
-          name: typescript-coverage
-          path: coverage/
+          files: coverage/lcov.info
+          flags: typescript
+          token: ${{ secrets.CODECOV_TOKEN }}
