@@ -328,4 +328,50 @@ mod tests {
         let result = checkout_remote_branch(&path, "origin/feature-x", "feature-x", false);
         assert!(result.is_err());
     }
+
+    fn current_branch(path: &str) -> String {
+        let repo = git2::Repository::open(path).unwrap();
+        let head = repo.head().unwrap();
+        head.shorthand().unwrap().to_string()
+    }
+
+    #[test]
+    fn test_merge_branch_already_up_to_date() {
+        let (_dir, path) = init_repo_with_commit();
+        create_branch(&path, "feature", true).unwrap();
+        let result = merge_branch(&path, "feature").unwrap();
+        assert_eq!(result, "Already up to date");
+    }
+
+    #[test]
+    fn test_merge_branch_fast_forward() {
+        let (_dir, path) = init_repo_with_commit();
+        let main_branch = current_branch(&path);
+        create_branch(&path, "feature", true).unwrap();
+        checkout_branch(&path, "feature").unwrap();
+        add_commit(&path, "commit on feature");
+        checkout_branch(&path, &main_branch).unwrap();
+        let result = merge_branch(&path, "feature").unwrap();
+        assert_eq!(result, "Fast-forward");
+    }
+
+    #[test]
+    fn test_merge_branch_diverged_no_conflicts() {
+        let (_dir, path) = init_repo_with_commit();
+        let main_branch = current_branch(&path);
+        create_branch(&path, "feature", true).unwrap();
+        add_commit(&path, "main commit");
+        checkout_branch(&path, "feature").unwrap();
+        add_commit(&path, "feature commit");
+        checkout_branch(&path, &main_branch).unwrap();
+        let result = merge_branch(&path, "feature").unwrap();
+        assert_eq!(result, "Merge completed - commit to finalize");
+    }
+
+    #[test]
+    fn test_merge_branch_nonexistent_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = merge_branch(&path, "no-such-branch");
+        assert!(result.is_err());
+    }
 }
