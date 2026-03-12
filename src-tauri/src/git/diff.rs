@@ -155,6 +155,145 @@ fn ranges_to_spans(ranges: &[(Style, &str)]) -> Vec<HighlightSpan> {
     spans
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn init_repo() -> (tempfile::TempDir, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        git2::Repository::init(&path).unwrap();
+        (dir, path)
+    }
+
+    fn make_commit(path: &str, files: &[(&str, &str)]) -> git2::Oid {
+        let repo = git2::Repository::open(path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let mut index = repo.index().unwrap();
+        for (file_name, content) in files {
+            let full_path = PathBuf::from(path).join(file_name);
+            fs::write(&full_path, content).unwrap();
+            index.add_path(std::path::Path::new(file_name)).unwrap();
+        }
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parents: Vec<git2::Commit> = match repo.head() {
+            Ok(head) => vec![head.peel_to_commit().unwrap()],
+            Err(_) => vec![],
+        };
+        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, "Test commit", &tree, &parent_refs)
+            .unwrap()
+    }
+
+    #[test]
+    fn test_get_working_diff_unstaged() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("foo.txt", "line1\n")]);
+
+        // Modify file without staging
+        fs::write(PathBuf::from(&path).join("foo.txt"), "line1\nline2\n").unwrap();
+
+        let diff = get_working_diff(&path, "foo.txt", false).unwrap();
+        assert_eq!(diff.path, "foo.txt");
+        assert!(!diff.hunks.is_empty());
+        let all_lines: Vec<_> = diff.hunks.iter().flat_map(|h| &h.lines).collect();
+        assert!(all_lines
+            .iter()
+            .any(|l| l.content.contains("line2") && matches!(l.line_type, DiffLineType::Addition)));
+    }
+
+    #[test]
+    fn test_get_working_diff_staged() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("foo.txt", "line1\n")]);
+
+        // Modify and stage file
+        fs::write(PathBuf::from(&path).join("foo.txt"), "line1\nline2\n").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("foo.txt")).unwrap();
+        index.write().unwrap();
+
+        let diff = get_working_diff(&path, "foo.txt", true).unwrap();
+        assert_eq!(diff.path, "foo.txt");
+        assert!(!diff.hunks.is_empty());
+        let all_lines: Vec<_> = diff.hunks.iter().flat_map(|h| &h.lines).collect();
+        assert!(all_lines
+            .iter()
+            .any(|l| matches!(l.line_type, DiffLineType::Addition)));
+    }
+
+    #[test]
+    fn test_get_commit_diff_single_file() {
+        let (_dir, path) = init_repo();
+        let oid = make_commit(&path, &[("foo.txt", "hello\nworld\n")]);
+
+        let files = get_commit_diff(&path, &oid.to_string(), Some("foo.txt")).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "foo.txt");
+        assert!(!files[0].hunks.is_empty());
+    }
+
+    #[test]
+    fn test_get_commit_diff_all_files() {
+        let (_dir, path) = init_repo();
+        let oid = make_commit(&path, &[("a.txt", "aaa\n"), ("b.txt", "bbb\n")]);
+
+        let files = get_commit_diff(&path, &oid.to_string(), None).unwrap();
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn test_get_commit_diff_addition_lines() {
+        let (_dir, path) = init_repo();
+        let oid = make_commit(&path, &[("foo.txt", "hello\n")]);
+
+        let files = get_commit_diff(&path, &oid.to_string(), Some("foo.txt")).unwrap();
+        assert!(!files.is_empty());
+        let all_lines: Vec<_> = files[0].hunks.iter().flat_map(|h| &h.lines).collect();
+        assert!(all_lines
+            .iter()
+            .any(|l| matches!(l.line_type, DiffLineType::Addition)));
+    }
+
+    #[test]
+    fn test_get_working_diff_invalid_path_errors() {
+        let result =
+            get_working_diff("/tmp/nonexistent_snazzgit_test_xyz_diff", "foo.txt", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_commit_diff_invalid_commit_errors() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("foo.txt", "hello\n")]);
+        let result = get_commit_diff(
+            &path,
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_commit_diff_second_commit_shows_diff() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("foo.txt", "line1\n")]);
+        let oid2 = make_commit(&path, &[("foo.txt", "line1\nline2\n")]);
+
+        let files = get_commit_diff(&path, &oid2.to_string(), Some("foo.txt")).unwrap();
+        assert_eq!(files.len(), 1);
+        let all_lines: Vec<_> = files[0].hunks.iter().flat_map(|h| &h.lines).collect();
+        assert!(all_lines
+            .iter()
+            .any(|l| l.content.contains("line2") && matches!(l.line_type, DiffLineType::Addition)));
+    }
+}
+
 fn parse_diff(diff: &git2::Diff, file_path: &str) -> Result<DiffFile, GitError> {
     let mut result = DiffFile {
         path: file_path.to_string(),

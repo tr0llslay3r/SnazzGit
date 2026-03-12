@@ -15,6 +15,11 @@ jobs:
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
@@ -31,9 +36,20 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - name: Run Rust library tests
+      - name: Run Rust tests with coverage
         working-directory: src-tauri
-        run: cargo test --lib
+        run: cargo llvm-cov --lib --lcov --output-path ../lcov-rust.info
+
+      - name: Print Rust coverage summary
+        working-directory: src-tauri
+        run: cargo llvm-cov --lib --no-run --text
+
+      - name: Upload Rust coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov-rust.info
+          flags: rust
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   typescript-tests:
     name: TypeScript unit tests
@@ -53,5 +69,12 @@ jobs:
       - name: Generate SvelteKit types
         run: npm run prepare
 
-      - name: Run TypeScript tests
-        run: npm test
+      - name: Run TypeScript tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload TypeScript coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/lcov.info
+          flags: typescript
+          token: ${{ secrets.CODECOV_TOKEN }}
