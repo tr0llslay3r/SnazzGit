@@ -2,6 +2,8 @@
 
 A snazzy, cross-platform Git GUI client built with [Tauri 2](https://tauri.app), [Svelte 5](https://svelte.dev), and [git2](https://github.com/rust-lang/git2-rs).
 
+[![codecov](https://codecov.io/gh/tr0llslay3r/SnazzGit/graph/badge.svg)](https://codecov.io/gh/tr0llslay3r/SnazzGit)
+
 ![SnazzGit Screenshot](screenshot.png)
 
 ## Features
