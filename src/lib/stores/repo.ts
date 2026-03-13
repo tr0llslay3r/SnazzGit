@@ -84,7 +84,6 @@ export async function setupWatcher(path: string) {
     watcherUnlisten = await listen('fs-changed', async () => {
       try {
         await refreshStatus();
-        await refreshRepo();
       } catch { /* ignore errors during auto-refresh */ }
     });
   } catch { /* watcher is optional */ }
