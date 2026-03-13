@@ -407,4 +407,84 @@ mod tests {
         assert!(json.contains("\"total_objects\":20"));
         assert!(json.contains("\"received_bytes\":4096"));
     }
+
+    #[test]
+    fn test_force_push_to_local_remote() {
+        let (_work_dir, work_path, _bare_dir, bare_path) = setup_local_remote();
+
+        // Push initial commit
+        push(&work_path, "origin", None, None).unwrap();
+
+        // Force push should also succeed
+        force_push(&work_path, "origin", None, None).unwrap();
+
+        // Verify the commit is still in bare repo
+        let bare_repo = git2::Repository::open(&bare_path).unwrap();
+        assert!(bare_repo.head().is_ok());
+    }
+
+    #[test]
+    fn test_force_push_invalid_remote() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = force_push(&path, "nonexistent", None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_force_push_no_head_errors() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().to_str().unwrap().to_string();
+        let repo = git2::Repository::init(&path).unwrap();
+        let bare_dir = tempfile::TempDir::new().unwrap();
+        let bare_path = bare_dir.path().to_str().unwrap().to_string();
+        git2::Repository::init_bare(&bare_path).unwrap();
+        repo.remote("origin", &bare_path).unwrap();
+        let result = force_push(&path, "origin", None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_pull_diverged_merge() {
+        let (_work_dir, work_path, _bare_dir, bare_path) = setup_local_remote();
+
+        // Push initial commit
+        push(&work_path, "origin", None, None).unwrap();
+
+        // Clone, add commit, push from clone
+        let clone_dir = tempfile::TempDir::new().unwrap();
+        let clone_path = clone_dir.path().to_str().unwrap().to_string();
+        git2::build::RepoBuilder::new()
+            .clone(&bare_path, std::path::Path::new(&clone_path))
+            .unwrap();
+
+        // Add a file in clone and push
+        add_commit_with_file(&clone_path, "clone_file.txt", "from clone\n", "Clone commit");
+        push(&clone_path, "origin", None, None).unwrap();
+
+        // Add a different file in original (diverge)
+        add_commit_with_file(&work_path, "work_file.txt", "from work\n", "Work commit");
+
+        // Pull — should result in a normal merge
+        let result = pull(&work_path, "origin", None, None).unwrap();
+        assert_eq!(result, "Merged - commit to finalize");
+    }
+
+    fn add_commit_with_file(path: &str, file: &str, content: &str, msg: &str) {
+        std::fs::write(std::path::Path::new(path).join(file), content).unwrap();
+        let repo = git2::Repository::open(path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new(file)).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &[&parent]).unwrap();
+    }
+
+    #[test]
+    fn test_rename_nonexistent_remote_fails() {
+        let (_dir, path) = init_repo_with_commit();
+        assert!(rename_remote(&path, "nonexistent", "new_name").is_err());
+    }
 }

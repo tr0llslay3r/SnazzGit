@@ -225,4 +225,71 @@ mod tests {
         let result = discard_file(path, "tracked.txt".into()).await;
         assert!(result.is_ok());
     }
+
+    fn commit_file(repo_path: &str, name: &str, content: &str) {
+        write_file(repo_path, name, content);
+        let repo = git2::Repository::open(repo_path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new(name)).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "add file", &tree, &[&parent])
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_stage_hunk_command() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "file.txt", "line1\nline2\nline3\n");
+        write_file(&path, "file.txt", "line1\nmodified\nline3\n");
+
+        let result = stage_hunk(
+            path.clone(),
+            "file.txt".into(),
+            1, 3, 1, 3,
+            "@@ -1,3 +1,3 @@".into(),
+            vec![
+                " line1\n".into(),
+                "-line2\n".into(),
+                "+modified\n".into(),
+                " line3\n".into(),
+            ],
+        ).await;
+        assert!(result.is_ok());
+
+        let s = get_status(path).await.unwrap();
+        assert!(s.staged.iter().any(|f| f.path == "file.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_unstage_hunk_command() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "file.txt", "line1\nline2\nline3\n");
+        write_file(&path, "file.txt", "line1\nmodified\nline3\n");
+
+        // Stage the whole file first
+        stage_file(path.clone(), "file.txt".into()).await.unwrap();
+        assert!(!get_status(path.clone()).await.unwrap().staged.is_empty());
+
+        // Unstage via hunk
+        let result = unstage_hunk(
+            path.clone(),
+            "file.txt".into(),
+            1, 3, 1, 3,
+            "@@ -1,3 +1,3 @@".into(),
+            vec![
+                " line1\n".into(),
+                "-line2\n".into(),
+                "+modified\n".into(),
+                " line3\n".into(),
+            ],
+        ).await;
+        assert!(result.is_ok());
+
+        let s = get_status(path).await.unwrap();
+        assert!(s.staged.is_empty());
+    }
 }

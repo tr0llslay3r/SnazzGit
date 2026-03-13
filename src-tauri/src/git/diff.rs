@@ -595,6 +595,81 @@ mod tests {
         let result = read_file_at_ref(&path, "no_such_file.txt", None).unwrap();
         assert!(result.is_none());
     }
+
+    #[test]
+    fn test_get_working_diff_staged_new_file() {
+        let (_dir, path) = init_repo();
+        // Initial commit so HEAD exists
+        make_commit(&path, &[("seed.txt", "seed\n")]);
+        // Stage a brand new file (not committed yet)
+        fs::write(PathBuf::from(&path).join("brand_new.txt"), "new content\nline2\n").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("brand_new.txt")).unwrap();
+        index.write().unwrap();
+        drop(repo);
+
+        let diff = get_working_diff(&path, "brand_new.txt", true).unwrap();
+        assert_eq!(diff.path, "brand_new.txt");
+        assert!(!diff.hunks.is_empty(), "staged new file should have hunks");
+        let all_lines: Vec<_> = diff.hunks.iter().flat_map(|h| &h.lines).collect();
+        assert!(all_lines.iter().any(|l|
+            l.content.contains("new content") && matches!(l.line_type, DiffLineType::Addition)
+        ));
+    }
+
+    #[test]
+    fn test_get_working_diff_staged_new_file_no_prior_commits() {
+        let (_dir, path) = init_repo();
+        // No commits — unborn HEAD. Stage a file.
+        fs::write(PathBuf::from(&path).join("first.txt"), "hello\nworld\n").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("first.txt")).unwrap();
+        index.write().unwrap();
+        drop(repo);
+
+        let diff = get_working_diff(&path, "first.txt", true).unwrap();
+        assert!(!diff.hunks.is_empty(), "staged file with no prior commits should have hunks via fallback");
+    }
+
+    #[test]
+    fn test_get_working_diff_deleted_file() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("to_delete.txt", "content\n")]);
+        // Delete the file
+        fs::remove_file(PathBuf::from(&path).join("to_delete.txt")).unwrap();
+
+        let diff = get_working_diff(&path, "to_delete.txt", false).unwrap();
+        assert_eq!(diff.path, "to_delete.txt");
+        assert!(!diff.hunks.is_empty(), "deleted file should have hunks");
+        let all_lines: Vec<_> = diff.hunks.iter().flat_map(|h| &h.lines).collect();
+        assert!(all_lines.iter().any(|l| matches!(l.line_type, DiffLineType::Deletion)));
+    }
+
+    #[test]
+    fn test_highlight_diff_adds_spans() {
+        let mut file = DiffFile {
+            path: "test.rs".to_string(),
+            hunks: vec![DiffHunk {
+                header: "@@ -1,1 +1,1 @@".to_string(),
+                old_start: 1,
+                old_lines: 1,
+                new_start: 1,
+                new_lines: 1,
+                lines: vec![DiffLine {
+                    line_type: DiffLineType::Addition,
+                    content: "fn main() {}".to_string(),
+                    old_lineno: None,
+                    new_lineno: Some(1),
+                    spans: Vec::new(),
+                }],
+            }],
+        };
+        highlight_diff(&mut file);
+        // After highlighting, spans should be populated (syntect will highlight Rust code)
+        assert!(!file.hunks[0].lines[0].spans.is_empty());
+    }
 }
 
 fn parse_diff(diff: &git2::Diff, file_path: &str) -> Result<DiffFile, GitError> {

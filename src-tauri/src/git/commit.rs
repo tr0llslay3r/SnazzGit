@@ -525,4 +525,63 @@ mod tests {
         let result = cherry_pick(&path, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_load_commits_includes_tag_refs() {
+        let (_dir, path) = init_empty_repo();
+        let oid = make_commit_msg(&path, "Tagged commit");
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let obj = repo.find_object(oid, None).unwrap();
+            repo.tag_lightweight("v1.0", &obj, false).unwrap();
+        }
+
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert_eq!(commits.len(), 1);
+        assert!(commits[0].refs.iter().any(|r| r.name == "v1.0" && matches!(r.ref_type, RefType::Tag)));
+    }
+
+    #[test]
+    fn test_load_commits_includes_annotated_tag_refs() {
+        let (_dir, path) = init_empty_repo();
+        let oid = make_commit_msg(&path, "Annotated tag commit");
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let obj = repo.find_object(oid, None).unwrap();
+            let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+            repo.tag("v2.0", &obj, &sig, "Release v2.0", false).unwrap();
+        }
+
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert_eq!(commits.len(), 1);
+        assert!(commits[0].refs.iter().any(|r| r.name == "v2.0" && matches!(r.ref_type, RefType::Tag)));
+    }
+
+    #[test]
+    fn test_load_commits_includes_head_ref() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "Head commit");
+
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert!(commits[0].refs.iter().any(|r| r.name == "HEAD" && matches!(r.ref_type, RefType::Head)));
+    }
+
+    #[test]
+    fn test_load_commits_includes_branch_refs() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "Branch commit");
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false).unwrap();
+        }
+
+        let commits = load_commits(&path, 100, 0).unwrap();
+        // Should have both main/master and feature branch refs
+        let branch_refs: Vec<_> = commits[0].refs.iter()
+            .filter(|r| matches!(r.ref_type, RefType::LocalBranch))
+            .collect();
+        assert!(branch_refs.len() >= 2);
+        assert!(branch_refs.iter().any(|r| r.name == "feature"));
+    }
 }

@@ -233,6 +233,44 @@ mod tests {
     }
 
     #[test]
+    fn test_rebase_onto_with_conflict_pauses() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, "Base", "shared.txt", "original\n");
+
+        // Create feature branch
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false).unwrap();
+        }
+
+        // Determine default branch name
+        let main_name = {
+            let repo = git2::Repository::open(&path).unwrap();
+            if repo.find_branch("main", git2::BranchType::Local).is_ok() { "main" } else { "master" }
+        }.to_string();
+
+        // Add conflicting change on main
+        make_commit(&path, "Main change", "shared.txt", "main version\n");
+
+        // Switch to feature
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let (obj, reference) = repo.revparse_ext("refs/heads/feature").unwrap();
+            repo.checkout_tree(&obj, None).unwrap();
+            repo.set_head(reference.unwrap().name().unwrap()).unwrap();
+        }
+
+        // Add conflicting change on feature
+        make_commit(&path, "Feature change", "shared.txt", "feature version\n");
+
+        // Rebase feature onto main — should pause due to conflict
+        let result = rebase_onto(&path, &main_name).unwrap();
+        assert!(result.contains("conflict") || result.contains("Conflict"),
+            "Expected conflict message, got: {}", result);
+    }
+
+    #[test]
     fn test_squash_preserves_tree() {
         let (_dir, path) = init_repo();
         make_commit(&path, "First", "a.txt", "a\n");
