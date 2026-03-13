@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { repoInfo, isLoading, refreshAll, refreshCommits, refreshStatus, refreshRepo, closeRepo, loadRecentRepos } from '$lib/stores/repo';
-  import { showSearch, showStagingArea, showThemePicker, showCloneDialog, showCredentialDialog, pendingCredentialRequest, addToast } from '$lib/stores/ui';
+  import { repoInfo, isLoading, refreshAll, refreshCommits, refreshStatus, refreshRepo, closeRepo, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
+  import { showSearch, showStagingArea, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, pendingCredentialRequest, addToast } from '$lib/stores/ui';
+  import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
   import { open } from '@tauri-apps/plugin-dialog';
 
@@ -18,6 +19,7 @@
       await tauri.addRecentRepo(info.path, info.name);
       await loadRecentRepos();
       await Promise.all([refreshCommits(), refreshStatus()]);
+      await setupWatcher(info.path);
       addToast(`Opened ${info.name}`, 'success');
     } catch (e) {
       addToast(`Failed to open repository: ${e}`, 'error');
@@ -83,6 +85,31 @@
     }
   }
 
+  function onPushContext(e: MouseEvent) {
+    e.preventDefault();
+    if (!$repoInfo || $repoInfo.remotes.length === 0) return;
+    const items: ContextMenuEntry[] = [
+      { label: 'Force Push (--force-with-lease)', action: async () => {
+        try {
+          $isLoading = true;
+          await tauri.forcePush($repoInfo!.path, $repoInfo!.remotes[0]);
+          await refreshAll();
+          addToast('Force push complete', 'success');
+        } catch (e: unknown) {
+          if (isAuthError(e)) {
+            $pendingCredentialRequest = { operation: 'push', remoteName: $repoInfo!.remotes[0] };
+            $showCredentialDialog = true;
+          } else {
+            addToast(`Force push failed: ${e}`, 'error');
+          }
+        } finally {
+          $isLoading = false;
+        }
+      }},
+    ];
+    showContextMenu(e.clientX, e.clientY, items);
+  }
+
   async function doRefresh() {
     try {
       await refreshAll();
@@ -121,7 +148,7 @@
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 1a.75.75 0 0 1 .75.75v8.69l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 1 1 1.06-1.06l2.22 2.22V1.75A.75.75 0 0 1 8 1z" fill="currentColor"/></svg>
         <span>Pull</span>
       </button>
-      <button class="toolbar-btn" onclick={doPush} disabled={$isLoading || $repoInfo.remotes.length === 0} title="Push">
+      <button class="toolbar-btn" onclick={doPush} oncontextmenu={onPushContext} disabled={$isLoading || $repoInfo.remotes.length === 0} title="Push (right-click for force push)">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 15a.75.75 0 0 1-.75-.75V5.56L5.03 7.78a.75.75 0 0 1-1.06-1.06l3.5-3.5a.75.75 0 0 1 1.06 0l3.5 3.5a.75.75 0 1 1-1.06 1.06L8.75 5.56v8.69A.75.75 0 0 1 8 15z" fill="currentColor"/></svg>
         <span>Push</span>
       </button>
@@ -132,6 +159,14 @@
       <button class="toolbar-btn" onclick={() => $showStagingArea = !$showStagingArea} class:active={$showStagingArea} title="Toggle staging area">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" fill="currentColor"/><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0z" fill="currentColor"/></svg>
         <span>Changes</span>
+      </button>
+      <button class="toolbar-btn" onclick={() => $showReflog = !$showReflog} class:active={$showReflog} title="Reflog">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z" fill="currentColor"/><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        <span>Reflog</span>
+      </button>
+      <button class="toolbar-btn" onclick={() => $showCompareDialog = true} title="Compare refs (Ctrl+D)">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M5.22 14.78a.75.75 0 0 0 1.06-1.06L4.56 12h8.69a.75.75 0 0 0 0-1.5H4.56l1.72-1.72a.75.75 0 0 0-1.06-1.06l-3 3a.75.75 0 0 0 0 1.06l3 3zM10.78 1.22a.75.75 0 0 0-1.06 1.06L11.44 4H2.75a.75.75 0 0 0 0 1.5h8.69l-1.72 1.72a.75.75 0 1 0 1.06 1.06l3-3a.75.75 0 0 0 0-1.06l-3-3z" fill="currentColor"/></svg>
+        <span>Compare</span>
       </button>
       <button class="toolbar-btn" onclick={doRefresh} disabled={$isLoading} title="Refresh">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z" fill="currentColor"/><path d="M8 1v4l3-2-3-2z" fill="currentColor"/></svg>

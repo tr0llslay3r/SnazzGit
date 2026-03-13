@@ -90,6 +90,20 @@ pub fn checkout_remote_branch(
     Ok(())
 }
 
+pub fn force_delete_branch(path: &str, name: &str) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let mut branch = repo.find_branch(name, BranchType::Local)?;
+    branch.get_mut().delete()?;
+    Ok(())
+}
+
+pub fn set_upstream(path: &str, branch_name: &str, upstream: Option<&str>) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let mut branch = repo.find_branch(branch_name, BranchType::Local)?;
+    branch.set_upstream(upstream)?;
+    Ok(())
+}
+
 pub fn reset_to_commit(path: &str, commit_id: &str, mode: &str) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
     let oid = git2::Oid::from_str(commit_id)

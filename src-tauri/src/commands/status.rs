@@ -58,6 +58,48 @@ pub async fn delete_file(path: String, file_path: String) -> Result<(), String> 
 }
 
 #[tauri::command]
+pub async fn stage_hunk(
+    path: String,
+    file_path: String,
+    old_start: u32,
+    old_lines: u32,
+    new_start: u32,
+    new_lines: u32,
+    header: String,
+    lines: Vec<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        status::stage_hunk(
+            &path, &file_path, old_start, old_lines, new_start, new_lines, &header, &lines,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn unstage_hunk(
+    path: String,
+    file_path: String,
+    old_start: u32,
+    old_lines: u32,
+    new_start: u32,
+    new_lines: u32,
+    header: String,
+    lines: Vec<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        status::unstage_hunk(
+            &path, &file_path, old_start, old_lines, new_start, new_lines, &header, &lines,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn add_to_gitignore(path: String, pattern: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || status::add_to_gitignore(&path, &pattern))
         .await

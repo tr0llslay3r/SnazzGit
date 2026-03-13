@@ -1,12 +1,14 @@
 <script lang="ts">
   import type { DiffLine } from '$lib/types';
+  import type { WordDiffSegment } from '$lib/utils/worddiff';
   import { applyHighlightSpans } from '$lib/utils/highlight';
 
   interface Props {
     line: DiffLine;
+    wordSegments?: WordDiffSegment[];
   }
 
-  let { line }: Props = $props();
+  let { line, wordSegments }: Props = $props();
 
   let bgClass = $derived(
     line.line_type === 'Addition' ? 'line-added' :
@@ -18,14 +20,36 @@
     line.line_type === 'Deletion' ? '-' : ' '
   );
 
-  let highlighted = $derived(applyHighlightSpans(line.content, line.spans));
+  let highlighted = $derived(
+    wordSegments ? null : applyHighlightSpans(line.content, line.spans)
+  );
+
+  function escapeHtml(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  let wordHighlighted = $derived(
+    wordSegments
+      ? wordSegments
+          .map((s) =>
+            s.changed
+              ? `<span class="word-change">${escapeHtml(s.text)}</span>`
+              : escapeHtml(s.text)
+          )
+          .join('')
+      : null
+  );
 </script>
 
 <div class="diff-line {bgClass}">
   <span class="line-no old">{line.old_lineno ?? ''}</span>
   <span class="line-no new">{line.new_lineno ?? ''}</span>
   <span class="line-prefix">{prefix}</span>
-  <span class="line-content">{@html highlighted}</span>
+  {#if wordHighlighted}
+    <span class="line-content">{@html wordHighlighted}</span>
+  {:else}
+    <span class="line-content">{@html highlighted}</span>
+  {/if}
 </div>
 
 <style>
@@ -65,5 +89,9 @@
   .line-content {
     flex: 1;
     padding-right: 12px;
+  }
+  .line-content :global(.word-change) {
+    background: var(--diff-word-highlight, rgba(255, 255, 100, 0.25));
+    border-radius: 2px;
   }
 </style>

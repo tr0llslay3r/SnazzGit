@@ -1,7 +1,7 @@
 <script lang="ts">
   import TreeView from '$lib/components/shared/TreeView.svelte';
   import { repoInfo, localBranches, remoteBranches, stashEntries, workingStatus, commits, refreshAll, refreshStatus, refreshStashes } from '$lib/stores/repo';
-  import { showBranchDialog, showStashDialog, selectedCommit, showStagingArea, selectedFile, addToast, jumpToCommitId, showCheckoutRemoteDialog, checkoutRemoteBranch } from '$lib/stores/ui';
+  import { showBranchDialog, showStashDialog, selectedCommit, showStagingArea, selectedFile, addToast, jumpToCommitId, showCheckoutRemoteDialog, checkoutRemoteBranch, showTagDialog, tagTargetCommitId } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
 
@@ -115,6 +115,26 @@
         addToast(msg, 'success');
       } catch (err) { addToast(`Merge failed: ${err}`, 'error'); }
     }});
+    items.push({ label: 'Rebase onto...', action: async () => {
+      try {
+        const msg = await tauri.rebaseOnto($repoInfo!.path, branch.name);
+        await refreshAll();
+        if (msg.includes('conflicts')) {
+          addToast(msg, 'warning');
+        } else {
+          addToast(msg, 'success');
+        }
+      } catch (err) { addToast(`Rebase failed: ${err}`, 'error'); }
+    }});
+    items.push({ label: 'Set Upstream...', action: async () => {
+      const upstream = prompt(`Set upstream for "${branch.name}" (e.g., origin/${branch.name}):\nLeave empty to unset.`);
+      if (upstream === null) return;
+      try {
+        await tauri.setUpstream($repoInfo!.path, branch.name, upstream.trim() || undefined);
+        await refreshAll();
+        addToast(upstream.trim() ? `Upstream set to ${upstream.trim()}` : 'Upstream unset', 'success');
+      } catch (err) { addToast(`Set upstream failed: ${err}`, 'error'); }
+    }});
     if (!branch.is_head) {
       items.push({ separator: true });
       items.push({ label: 'Rename', action: async () => {
@@ -126,13 +146,22 @@
           addToast(`Renamed to ${newName.trim()}`, 'success');
         } catch (err) { addToast(`Rename failed: ${err}`, 'error'); }
       }});
-      items.push({ label: 'Delete', danger: true, action: async () => {
-        try {
-          await tauri.deleteBranch($repoInfo!.path, branch.name);
-          await refreshAll();
-          addToast(`Deleted ${branch.name}`, 'success');
-        } catch (err) { addToast(`Delete failed: ${err}`, 'error'); }
-      }});
+      items.push({ label: 'Delete', children: [
+        { label: 'Delete (safe)', action: async () => {
+          try {
+            await tauri.deleteBranch($repoInfo!.path, branch.name);
+            await refreshAll();
+            addToast(`Deleted ${branch.name}`, 'success');
+          } catch (err) { addToast(`Delete failed: ${err}`, 'error'); }
+        }},
+        { label: 'Force Delete', danger: true, action: async () => {
+          try {
+            await tauri.forceDeleteBranch($repoInfo!.path, branch.name);
+            await refreshAll();
+            addToast(`Force deleted ${branch.name}`, 'success');
+          } catch (err) { addToast(`Force delete failed: ${err}`, 'error'); }
+        }},
+      ]});
     }
     showContextMenu(e.clientX, e.clientY, items);
   }
@@ -180,6 +209,20 @@
     }
   }
 
+  function onTagContext(node: { label: string; data?: unknown }, e: MouseEvent) {
+    if (!$repoInfo) return;
+    const items: ContextMenuEntry[] = [
+      { label: 'Delete', danger: true, action: async () => {
+        try {
+          await tauri.deleteTag($repoInfo!.path, node.label);
+          await refreshAll();
+          addToast(`Deleted tag "${node.label}"`, 'success');
+        } catch (err) { addToast(`Delete tag failed: ${err}`, 'error'); }
+      }},
+    ];
+    showContextMenu(e.clientX, e.clientY, items);
+  }
+
   function onBranchNavigate(node: { label: string; data?: unknown }) {
     if (!node.data) return;
     const branch = node.data as { name: string; commit_id: string };
@@ -208,14 +251,60 @@
   }
 
   function onRemoteContext(node: { label: string; data?: unknown }, e: MouseEvent) {
-    if (!$repoInfo || !node.data) return;
-    const items: ContextMenuEntry[] = [
-      { label: 'Checkout...', action: () => {
+    if (!$repoInfo) return;
+    const items: ContextMenuEntry[] = [];
+
+    if (node.data) {
+      // Branch node under a remote
+      items.push({ label: 'Checkout...', action: () => {
         $checkoutRemoteBranch = remoteNodeToBranch(node.data!);
         $showCheckoutRemoteDialog = true;
-      }},
-    ];
+      }});
+    } else {
+      // Remote group node (e.g., "origin")
+      items.push({ label: 'Fetch', action: async () => {
+        try {
+          await tauri.fetchRemote($repoInfo!.path, node.label);
+          await refreshAll();
+          addToast(`Fetched ${node.label}`, 'success');
+        } catch (err) { addToast(`Fetch failed: ${err}`, 'error'); }
+      }});
+      items.push({ separator: true });
+      items.push({ label: 'Rename', action: async () => {
+        const newName = prompt(`Rename remote "${node.label}" to:`);
+        if (!newName || !newName.trim()) return;
+        try {
+          await tauri.renameRemote($repoInfo!.path, node.label, newName.trim());
+          await refreshAll();
+          addToast(`Renamed to ${newName.trim()}`, 'success');
+        } catch (err) { addToast(`Rename failed: ${err}`, 'error'); }
+      }});
+      items.push({ label: 'Remove', danger: true, action: async () => {
+        try {
+          await tauri.removeRemote($repoInfo!.path, node.label);
+          await refreshAll();
+          addToast(`Removed remote "${node.label}"`, 'success');
+        } catch (err) { addToast(`Remove failed: ${err}`, 'error'); }
+      }});
+    }
     showContextMenu(e.clientX, e.clientY, items);
+  }
+
+  function addRemoteDialog() {
+    const name = prompt('Remote name:');
+    if (!name || !name.trim()) return;
+    const url = prompt('Remote URL:');
+    if (!url || !url.trim()) return;
+    doAddRemote(name.trim(), url.trim());
+  }
+
+  async function doAddRemote(name: string, url: string) {
+    if (!$repoInfo) return;
+    try {
+      await tauri.addRemote($repoInfo.path, name, url);
+      await refreshAll();
+      addToast(`Added remote "${name}"`, 'success');
+    } catch (err) { addToast(`Add remote failed: ${err}`, 'error'); }
   }
 
   async function onBranchSelect(node: { label: string; data?: unknown }) {
@@ -264,13 +353,19 @@
     </div>
 
     <div class="sidebar-section">
-      <div class="section-header"><span>Remotes</span></div>
+      <div class="section-header">
+        <span>Remotes</span>
+        <button class="section-action" onclick={addRemoteDialog} title="Add remote">+</button>
+      </div>
       <TreeView nodes={remoteNodes()} onSelect={onRemoteNavigate} onDblSelect={onRemoteSelect} onContextMenu={onRemoteContext} />
     </div>
 
     <div class="sidebar-section">
-      <div class="section-header"><span>Tags</span></div>
-      <TreeView nodes={tagNodes()} onSelect={onTagSelect} />
+      <div class="section-header">
+        <span>Tags</span>
+        <button class="section-action" onclick={() => $showTagDialog = true} title="New tag">+</button>
+      </div>
+      <TreeView nodes={tagNodes()} onSelect={onTagSelect} onContextMenu={onTagContext} />
     </div>
 
     <div class="sidebar-section">

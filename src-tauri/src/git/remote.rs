@@ -132,6 +132,66 @@ pub fn push(
     Ok(())
 }
 
+pub fn force_push(
+    path: &str,
+    remote_name: &str,
+    credentials: Option<Credentials>,
+    app_handle: Option<&AppHandle>,
+) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let mut remote = repo.find_remote(remote_name)?;
+
+    let head = repo.head()?;
+    let refspec = head
+        .name()
+        .ok_or_else(|| GitError::General("Cannot determine HEAD ref".into()))?
+        .to_string();
+
+    let force_refspec = format!("+{refspec}");
+
+    let mut callbacks = git2::RemoteCallbacks::new();
+    callbacks.credentials(make_credential_callback(credentials));
+
+    if let Some(handle) = app_handle {
+        let handle = handle.clone();
+        callbacks.push_transfer_progress(move |current, total, bytes| {
+            let _ = handle.emit(
+                "git-progress",
+                ProgressPayload {
+                    received_objects: current,
+                    total_objects: total,
+                    indexed_deltas: 0,
+                    total_deltas: 0,
+                    received_bytes: bytes,
+                },
+            );
+        });
+    }
+
+    let mut push_options = git2::PushOptions::new();
+    push_options.remote_callbacks(callbacks);
+    remote.push(&[&force_refspec], Some(&mut push_options))?;
+    Ok(())
+}
+
+pub fn add_remote(path: &str, name: &str, url: &str) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    repo.remote(name, url)?;
+    Ok(())
+}
+
+pub fn remove_remote(path: &str, name: &str) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    repo.remote_delete(name)?;
+    Ok(())
+}
+
+pub fn rename_remote(path: &str, old_name: &str, new_name: &str) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    repo.remote_rename(old_name, new_name)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,6 +352,46 @@ mod tests {
     }
 
     // --- ProgressPayload ---
+
+    // --- remote management tests ---
+
+    #[test]
+    fn test_add_remote() {
+        let (_dir, path) = init_repo_with_commit();
+        add_remote(&path, "upstream", "https://example.com/repo.git").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        assert!(repo.find_remote("upstream").is_ok());
+    }
+
+    #[test]
+    fn test_add_duplicate_remote_fails() {
+        let (_dir, path) = init_repo_with_commit();
+        add_remote(&path, "upstream", "https://example.com/repo.git").unwrap();
+        assert!(add_remote(&path, "upstream", "https://other.com/repo.git").is_err());
+    }
+
+    #[test]
+    fn test_remove_remote() {
+        let (_work_dir, work_path, _bare_dir, _) = setup_local_remote();
+        remove_remote(&work_path, "origin").unwrap();
+        let repo = git2::Repository::open(&work_path).unwrap();
+        assert!(repo.find_remote("origin").is_err());
+    }
+
+    #[test]
+    fn test_remove_nonexistent_remote_fails() {
+        let (_dir, path) = init_repo_with_commit();
+        assert!(remove_remote(&path, "nonexistent").is_err());
+    }
+
+    #[test]
+    fn test_rename_remote() {
+        let (_work_dir, work_path, _bare_dir, _) = setup_local_remote();
+        rename_remote(&work_path, "origin", "upstream").unwrap();
+        let repo = git2::Repository::open(&work_path).unwrap();
+        assert!(repo.find_remote("upstream").is_ok());
+        assert!(repo.find_remote("origin").is_err());
+    }
 
     #[test]
     fn test_progress_payload_serialization() {

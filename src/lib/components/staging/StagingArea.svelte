@@ -1,7 +1,7 @@
 <script lang="ts">
   import FileEntry from './FileEntry.svelte';
   import { repoInfo, workingStatus, refreshAll, refreshStatus } from '$lib/stores/repo';
-  import { selectedFile, selectedFileStaged, addToast } from '$lib/stores/ui';
+  import { selectedFile, selectedFileStaged, addToast, fileHistoryPath } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
 
@@ -216,6 +216,9 @@
     items.push({ separator: true });
     items.push(...getIgnoreItems(filePath));
     items.push({ separator: true });
+    if (status !== 'untracked' && status !== 'New') {
+      items.push({ label: 'File History', action: () => { $fileHistoryPath = filePath; } });
+    }
     items.push({ label: 'Copy Path', action: () => navigator.clipboard.writeText(filePath) });
     showContextMenu(e.clientX, e.clientY, items);
   }
@@ -224,6 +227,7 @@
     const items: ContextMenuEntry[] = [
       { label: 'Unstage', action: () => unstage(filePath) },
       { separator: true },
+      { label: 'File History', action: () => { $fileHistoryPath = filePath; } },
       { label: 'Copy Path', action: () => navigator.clipboard.writeText(filePath) },
     ];
     showContextMenu(e.clientX, e.clientY, items);

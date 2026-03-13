@@ -1,6 +1,6 @@
 <script lang="ts">
   import { commits, graphRows, repoInfo, refreshAll } from '$lib/stores/repo';
-  import { selectedCommit, showBranchDialog, addToast, jumpToCommitId } from '$lib/stores/ui';
+  import { selectedCommit, showBranchDialog, addToast, jumpToCommitId, showTagDialog, tagTargetCommitId } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import CommitGraph from './CommitGraph.svelte';
   import * as tauri from '$lib/utils/tauri';
@@ -59,7 +59,20 @@
       { label: 'Copy Short Hash', action: () => navigator.clipboard.writeText(commit.short_id) },
       { label: 'Copy Message', action: () => navigator.clipboard.writeText(commit.summary) },
       { separator: true },
+      { label: 'Cherry-pick', action: async () => {
+        if (!$repoInfo) return;
+        try {
+          const result = await tauri.cherryPickCommit($repoInfo.path, commit.id);
+          await refreshAll();
+          if (result.includes('conflicts')) {
+            addToast(result, 'warning');
+          } else {
+            addToast(`Cherry-picked ${commit.short_id}`, 'success');
+          }
+        } catch (err) { addToast(`Cherry-pick failed: ${err}`, 'error'); }
+      }},
       { label: 'Create Branch Here', action: () => { $selectedCommit = commit; $showBranchDialog = true; } },
+      { label: 'Create Tag Here', action: () => { $tagTargetCommitId = commit.id; $showTagDialog = true; } },
       { label: 'Checkout (Detached)', action: async () => {
         if (!$repoInfo) return;
         try {
@@ -67,6 +80,19 @@
           await refreshAll();
           addToast(`Checked out ${commit.short_id}`, 'success');
         } catch (err) { addToast(`Checkout failed: ${err}`, 'error'); }
+      }},
+      { label: 'Squash from here', action: async () => {
+        if (!$repoInfo) return;
+        const idx = $commits.findIndex(c => c.id === commit.id);
+        if (idx <= 0) { addToast('Nothing to squash', 'warning'); return; }
+        const count = idx + 1;
+        const msg = prompt(`Squash ${count} commits into one.\nEnter new commit message:`, commit.summary);
+        if (!msg) return;
+        try {
+          await tauri.squashCommits($repoInfo.path, count, msg);
+          await refreshAll();
+          addToast(`Squashed ${count} commits`, 'success');
+        } catch (err) { addToast(`Squash failed: ${err}`, 'error'); }
       }},
       { label: 'Reset current branch to here', children: [
         { label: 'Soft (keep staged)', action: async () => {

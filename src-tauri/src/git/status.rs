@@ -143,6 +143,81 @@ pub fn delete_file(repo_path: &str, file_path: &str) -> Result<(), GitError> {
     Ok(())
 }
 
+pub fn stage_hunk(
+    path: &str,
+    file_path: &str,
+    old_start: u32,
+    old_lines: u32,
+    new_start: u32,
+    new_lines: u32,
+    header: &str,
+    lines: &[String],
+) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+
+    // Build a patch in unified diff format
+    let mut patch = String::new();
+    patch.push_str(&format!("--- a/{}\n", file_path));
+    patch.push_str(&format!("+++ b/{}\n", file_path));
+    patch.push_str(&format!(
+        "@@ -{},{} +{},{} @@ {}\n",
+        old_start, old_lines, new_start, new_lines, header
+    ));
+    for line in lines {
+        patch.push_str(line);
+        if !line.ends_with('\n') {
+            patch.push('\n');
+        }
+    }
+
+    let diff = git2::Diff::from_buffer(patch.as_bytes())?;
+    repo.apply(&diff, git2::ApplyLocation::Index, None)?;
+
+    Ok(())
+}
+
+pub fn unstage_hunk(
+    path: &str,
+    file_path: &str,
+    old_start: u32,
+    old_lines: u32,
+    new_start: u32,
+    new_lines: u32,
+    header: &str,
+    lines: &[String],
+) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+
+    // Build a reverse patch to unstage: swap +/- and old/new
+    let mut patch = String::new();
+    patch.push_str(&format!("--- a/{}\n", file_path));
+    patch.push_str(&format!("+++ b/{}\n", file_path));
+    patch.push_str(&format!(
+        "@@ -{},{} +{},{} @@ {}\n",
+        new_start, new_lines, old_start, old_lines, header
+    ));
+    for line in lines {
+        // Reverse: + becomes -, - becomes +
+        if line.starts_with('+') {
+            patch.push('-');
+            patch.push_str(&line[1..]);
+        } else if line.starts_with('-') {
+            patch.push('+');
+            patch.push_str(&line[1..]);
+        } else {
+            patch.push_str(line);
+        }
+        if !patch.ends_with('\n') {
+            patch.push('\n');
+        }
+    }
+
+    let diff = git2::Diff::from_buffer(patch.as_bytes())?;
+    repo.apply(&diff, git2::ApplyLocation::Index, None)?;
+
+    Ok(())
+}
+
 pub fn add_to_gitignore(repo_path: &str, pattern: &str) -> Result<(), GitError> {
     let gitignore_path = Path::new(repo_path).join(".gitignore");
 

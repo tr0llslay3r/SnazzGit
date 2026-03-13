@@ -151,6 +151,104 @@ fn build_ref_map(repo: &Repository) -> Result<HashMap<Oid, Vec<RefInfo>>, GitErr
     Ok(map)
 }
 
+pub fn file_history(
+    path: &str,
+    file_path: &str,
+    limit: usize,
+) -> Result<Vec<CommitInfo>, GitError> {
+    let repo = Repository::open(path)?;
+    let ref_map = build_ref_map(&repo)?;
+
+    let mut revwalk = repo.revwalk()?;
+    revwalk.set_sorting(Sort::TIME | Sort::TOPOLOGICAL)?;
+    if revwalk.push_head().is_err() {
+        return Ok(Vec::new());
+    }
+
+    let mut commits = Vec::new();
+    let target = std::path::Path::new(file_path);
+
+    for oid_result in revwalk {
+        let oid = oid_result?;
+        let commit = repo.find_commit(oid)?;
+        let tree = commit.tree()?;
+
+        // Check if this commit touched the file
+        let has_file = tree.get_path(target).is_ok();
+        let parent_has_same = commit
+            .parent(0)
+            .ok()
+            .and_then(|p| p.tree().ok())
+            .map(|pt| {
+                match (pt.get_path(target), tree.get_path(target)) {
+                    (Ok(pe), Ok(te)) => pe.id() == te.id(),
+                    (Err(_), Err(_)) => true,
+                    _ => false,
+                }
+            })
+            .unwrap_or(!has_file);
+
+        if !parent_has_same {
+            let id = oid.to_string();
+            let short_id = id[..8.min(id.len())].to_string();
+            let author = commit.author();
+            let committer = commit.committer();
+            let parent_ids: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
+            let refs = ref_map.get(&oid).cloned().unwrap_or_default();
+
+            commits.push(CommitInfo {
+                id,
+                short_id,
+                message: commit.message().unwrap_or("").to_string(),
+                summary: commit.summary().unwrap_or("").to_string(),
+                author_name: author.name().unwrap_or("").to_string(),
+                author_email: author.email().unwrap_or("").to_string(),
+                author_time: author.when().seconds(),
+                committer_name: committer.name().unwrap_or("").to_string(),
+                committer_time: committer.when().seconds(),
+                parent_ids,
+                refs,
+            });
+
+            if commits.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    Ok(commits)
+}
+
+pub fn cherry_pick(path: &str, commit_id: &str) -> Result<String, GitError> {
+    let repo = Repository::open(path)?;
+    let oid = Oid::from_str(commit_id)?;
+    let commit = repo.find_commit(oid)?;
+
+    repo.cherrypick(&commit, None)?;
+
+    let index = repo.index()?;
+    if index.has_conflicts() {
+        return Ok("Cherry-pick has conflicts - resolve before committing".to_string());
+    }
+
+    // Auto-commit the cherry-pick
+    let sig = repo.signature().or_else(|_| {
+        git2::Signature::now(
+            commit.author().name().unwrap_or("Unknown"),
+            commit.author().email().unwrap_or("unknown@unknown"),
+        )
+    })?;
+    let tree_id = repo.index()?.write_tree()?;
+    let tree = repo.find_tree(tree_id)?;
+    let head = repo.head()?.peel_to_commit()?;
+    let message = commit.message().unwrap_or("Cherry-picked commit");
+    let new_oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head])?;
+
+    repo.cleanup_state()?;
+
+    Ok(new_oid.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

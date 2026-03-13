@@ -113,6 +113,125 @@ pub fn get_commit_diff(path: &str, commit_id: &str, file_path: Option<&str>) -> 
     Ok(files)
 }
 
+/// Read a file's content at a given ref (or working tree if ref is None).
+/// Returns base64 encoded content for binary-safe transfer.
+pub fn read_file_at_ref(
+    path: &str,
+    file_path: &str,
+    git_ref: Option<&str>,
+) -> Result<Option<String>, GitError> {
+    use base64::Engine;
+
+    if let Some(r) = git_ref {
+        let repo = Repository::open(path)?;
+        let obj = repo.revparse_single(r)?;
+        let tree = obj.peel_to_tree()?;
+        match tree.get_path(std::path::Path::new(file_path)) {
+            Ok(entry) => {
+                let blob = repo.find_blob(entry.id())?;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(blob.content());
+                Ok(Some(encoded))
+            }
+            Err(_) => Ok(None),
+        }
+    } else {
+        // Read from working tree
+        let full_path = std::path::Path::new(path).join(file_path);
+        if full_path.exists() {
+            let content = std::fs::read(&full_path)?;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&content);
+            Ok(Some(encoded))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+pub fn diff_refs(path: &str, from_ref: &str, to_ref: &str) -> Result<Vec<DiffFile>, GitError> {
+    let repo = Repository::open(path)?;
+
+    let from_obj = repo.revparse_single(from_ref)?;
+    let to_obj = repo.revparse_single(to_ref)?;
+
+    let from_tree = from_obj.peel_to_tree()?;
+    let to_tree = to_obj.peel_to_tree()?;
+
+    let diff = repo.diff_tree_to_tree(Some(&from_tree), Some(&to_tree), None)?;
+
+    let mut files = Vec::new();
+    let mut current_file: Option<DiffFile> = None;
+    let mut current_hunk: Option<DiffHunk> = None;
+
+    diff.print(git2::DiffFormat::Patch, |delta, hunk, line| {
+        let file_name = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        match line.origin() {
+            'F' => {
+                if let Some(mut prev_file) = current_file.take() {
+                    if let Some(h) = current_hunk.take() {
+                        prev_file.hunks.push(h);
+                    }
+                    files.push(prev_file);
+                }
+                current_file = Some(DiffFile {
+                    path: file_name,
+                    hunks: Vec::new(),
+                });
+            }
+            'H' => {
+                if let Some(ref mut file) = current_file {
+                    if let Some(h) = current_hunk.take() {
+                        file.hunks.push(h);
+                    }
+                }
+                if let Some(h) = hunk {
+                    current_hunk = Some(DiffHunk {
+                        header: String::from_utf8_lossy(h.header()).trim().to_string(),
+                        old_start: h.old_start(),
+                        old_lines: h.old_lines(),
+                        new_start: h.new_start(),
+                        new_lines: h.new_lines(),
+                        lines: Vec::new(),
+                    });
+                }
+            }
+            '+' | '-' | ' ' => {
+                if let Some(ref mut hunk) = current_hunk {
+                    let content = String::from_utf8_lossy(line.content()).to_string();
+                    let line_type = match line.origin() {
+                        '+' => DiffLineType::Addition,
+                        '-' => DiffLineType::Deletion,
+                        _ => DiffLineType::Context,
+                    };
+                    hunk.lines.push(DiffLine {
+                        line_type,
+                        content,
+                        old_lineno: line.old_lineno(),
+                        new_lineno: line.new_lineno(),
+                        spans: Vec::new(),
+                    });
+                }
+            }
+            _ => {}
+        }
+        true
+    })?;
+
+    if let Some(mut file) = current_file {
+        if let Some(h) = current_hunk {
+            file.hunks.push(h);
+        }
+        files.push(file);
+    }
+
+    Ok(files)
+}
+
 pub fn highlight_diff(file: &mut DiffFile) {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();

@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { listen } from '@tauri-apps/api/event';
 import type { RepoInfo, CommitInfo, GraphRow, WorkingTreeStatus, StashEntry, RecentRepo } from '$lib/types';
 import * as tauri from '$lib/utils/tauri';
 
@@ -66,11 +67,37 @@ export async function loadRecentRepos() {
 }
 
 export function closeRepo() {
+  teardownWatcher();
   repoInfo.set(null);
   commits.set([]);
   graphRows.set([]);
   workingStatus.set(null);
   stashEntries.set([]);
+}
+
+let watcherUnlisten: (() => void) | null = null;
+
+export async function setupWatcher(path: string) {
+  await teardownWatcher();
+  try {
+    await tauri.startWatching(path);
+    watcherUnlisten = await listen('fs-changed', async () => {
+      try {
+        await refreshStatus();
+        await refreshRepo();
+      } catch { /* ignore errors during auto-refresh */ }
+    });
+  } catch { /* watcher is optional */ }
+}
+
+export async function teardownWatcher() {
+  if (watcherUnlisten) {
+    watcherUnlisten();
+    watcherUnlisten = null;
+  }
+  try {
+    await tauri.stopWatching();
+  } catch { /* ignore */ }
 }
 
 export const hasChanges = derived(workingStatus, ($status) => {

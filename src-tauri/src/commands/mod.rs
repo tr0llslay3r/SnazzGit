@@ -11,4 +11,8 @@ pub mod repo;
 pub mod search;
 pub mod stash;
 pub mod status;
+pub mod rebase;
+pub mod reflog;
+pub mod tags;
 pub mod theme;
+pub mod watcher;

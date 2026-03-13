@@ -12,4 +12,8 @@ pub mod repository;
 pub mod search;
 pub mod stash;
 pub mod status;
+pub mod rebase;
+pub mod reflog;
+pub mod tag;
 pub mod types;
+pub mod watcher;

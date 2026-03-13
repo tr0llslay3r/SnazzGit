@@ -1,9 +1,13 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import Sidebar from '$lib/components/layout/Sidebar.svelte';
   import Toolbar from '$lib/components/layout/Toolbar.svelte';
   import StatusBar from '$lib/components/layout/StatusBar.svelte';
   import CommitList from '$lib/components/commit/CommitList.svelte';
   import CommitDetail from '$lib/components/commit/CommitDetail.svelte';
+  import FileHistory from '$lib/components/commit/FileHistory.svelte';
+  import ReflogView from '$lib/components/commit/ReflogView.svelte';
   import DiffView from '$lib/components/diff/DiffView.svelte';
   import StagingArea from '$lib/components/staging/StagingArea.svelte';
   import ThemePicker from '$lib/components/theme/ThemePicker.svelte';
@@ -11,10 +15,13 @@
   import MergeDialog from '$lib/components/branch/MergeDialog.svelte';
   import CheckoutRemoteDialog from '$lib/components/branch/CheckoutRemoteDialog.svelte';
   import StashDialog from '$lib/components/shared/StashDialog.svelte';
+  import TagDialog from '$lib/components/shared/TagDialog.svelte';
   import CredentialDialog from '$lib/components/shared/CredentialDialog.svelte';
   import CloneDialog from '$lib/components/shared/CloneDialog.svelte';
-  import { repoInfo, commits, recentRepos, isLoading, refreshCommits, refreshStatus, loadRecentRepos } from '$lib/stores/repo';
-  import { selectedCommit, showStagingArea, showCloneDialog, addToast } from '$lib/stores/ui';
+  import CompareDialog from '$lib/components/shared/CompareDialog.svelte';
+  import CompareView from '$lib/components/diff/CompareView.svelte';
+  import { repoInfo, commits, recentRepos, isLoading, refreshCommits, refreshStatus, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
+  import { selectedCommit, showStagingArea, showCloneDialog, addToast, fileHistoryPath, compareRefs, showReflog } from '$lib/stores/ui';
   import * as tauri from '$lib/utils/tauri';
 
   async function openRecent(path: string) {
@@ -25,12 +32,40 @@
       await tauri.addRecentRepo(info.path, info.name);
       await loadRecentRepos();
       await Promise.all([refreshCommits(), refreshStatus()]);
+      await setupWatcher(info.path);
     } catch (e) {
       addToast(`Failed to open repository: ${e}`, 'error');
     } finally {
       $isLoading = false;
     }
   }
+
+  onMount(() => {
+    let unlistenDrop: (() => void) | undefined;
+    getCurrentWindow().onDragDropEvent(async (event) => {
+      if (event.payload.type === 'drop') {
+        const paths = event.payload.paths;
+        if (paths.length > 0) {
+          try {
+            $isLoading = true;
+            const info = await tauri.openRepository(paths[0]);
+            $repoInfo = info;
+            await tauri.addRecentRepo(info.path, info.name);
+            await loadRecentRepos();
+            await Promise.all([refreshCommits(), refreshStatus()]);
+            await setupWatcher(info.path);
+            addToast(`Opened ${info.name}`, 'success');
+          } catch (e) {
+            addToast(`Failed to open repository: ${e}`, 'error');
+          } finally {
+            $isLoading = false;
+          }
+        }
+      }
+    }).then(fn => { unlistenDrop = fn; });
+
+    return () => { unlistenDrop?.(); };
+  });
 
   async function removeRecent(path: string) {
     try {
@@ -157,7 +192,27 @@
           role="separator"
         ></div>
         <div class="bottom-pane" style="height: {bottomHeight}px">
-          {#if $showStagingArea && !$selectedCommit}
+          {#if $showReflog}
+            <ReflogView />
+          {:else if $compareRefs}
+            <CompareView />
+          {:else if $fileHistoryPath && !$selectedCommit}
+            <div class="bottom-split">
+              <div class="staging-col" style="width: {stagingWidth}px">
+                <FileHistory />
+              </div>
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+              <div
+                class="staging-divider"
+                class:active={draggingStaging}
+                onmousedown={onStagingDrag}
+                role="separator"
+              ></div>
+              <div class="diff-col">
+                <DiffView />
+              </div>
+            </div>
+          {:else if $showStagingArea && !$selectedCommit}
             <div class="bottom-split">
               <div class="staging-col" style="width: {stagingWidth}px">
                 <StagingArea />
@@ -227,8 +282,10 @@
 <MergeDialog />
 <CheckoutRemoteDialog />
 <StashDialog />
+<TagDialog />
 <CredentialDialog />
 <CloneDialog />
+<CompareDialog />
 
 <style>
   .app-shell {

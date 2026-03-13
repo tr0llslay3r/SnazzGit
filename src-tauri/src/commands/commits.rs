@@ -73,6 +73,26 @@ pub async fn create_commit(
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+pub async fn file_history(
+    path: String,
+    file_path: String,
+    limit: usize,
+) -> Result<Vec<CommitInfo>, String> {
+    tokio::task::spawn_blocking(move || commit::file_history(&path, &file_path, limit))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cherry_pick_commit(path: String, commit_id: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || commit::cherry_pick(&path, &commit_id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

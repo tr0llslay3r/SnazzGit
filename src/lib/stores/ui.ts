@@ -21,6 +21,12 @@ export const showCloneDialog = writable(false);
 export const pendingCredentialRequest = writable<CredentialRequest | null>(null);
 export const showCheckoutRemoteDialog = writable(false);
 export const checkoutRemoteBranch = writable<BranchInfo | null>(null);
+export const showTagDialog = writable(false);
+export const tagTargetCommitId = writable<string | null>(null);
+export const fileHistoryPath = writable<string | null>(null);
+export const showCompareDialog = writable(false);
+export const compareRefs = writable<{ from: string; to: string } | null>(null);
+export const showReflog = writable(false);
 
 let toastId = 0;
 

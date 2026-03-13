@@ -2,10 +2,11 @@
   import DiffLineComponent from './DiffLine.svelte';
   import HunkHeader from './HunkHeader.svelte';
   import ConflictView from './ConflictView.svelte';
-  import { diffMode, selectedFile, selectedFileStaged } from '$lib/stores/ui';
-  import { repoInfo, workingStatus } from '$lib/stores/repo';
+  import { diffMode, selectedFile, selectedFileStaged, addToast } from '$lib/stores/ui';
+  import { repoInfo, workingStatus, refreshStatus } from '$lib/stores/repo';
   import * as tauri from '$lib/utils/tauri';
-  import type { DiffFile } from '$lib/types';
+  import { computeWordDiff, type WordDiffSegment } from '$lib/utils/worddiff';
+  import type { DiffFile, DiffHunk, DiffLine } from '$lib/types';
 
   interface Props {
     file?: DiffFile | null;
@@ -16,9 +17,27 @@
 
   let activeDiff = $state<DiffFile | null>(null);
   let loadError = $state<string | null>(null);
+  let oldImageSrc = $state<string | null>(null);
+  let newImageSrc = $state<string | null>(null);
 
-  // Plain counter to cancel stale requests (not reactive)
   let requestId = 0;
+
+  const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.ico']);
+
+  function isImageFile(path: string): boolean {
+    const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
+    return IMAGE_EXTS.has(ext);
+  }
+
+  function mimeType(path: string): string {
+    const ext = path.substring(path.lastIndexOf('.')).toLowerCase();
+    const map: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp',
+      '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+    };
+    return map[ext] ?? 'image/png';
+  }
 
   let isConflicted = $derived(
     !$selectedFileStaged &&
@@ -43,10 +62,30 @@
     }
   }
 
+  async function loadImageDiff(repoPath: string, filePath: string) {
+    const mime = mimeType(filePath);
+    try {
+      // Old version from HEAD
+      const oldData = await tauri.readFileAtRef(repoPath, filePath, 'HEAD');
+      oldImageSrc = oldData ? `data:${mime};base64,${oldData}` : null;
+    } catch {
+      oldImageSrc = null;
+    }
+    try {
+      // New version from working tree
+      const newData = await tauri.readFileAtRef(repoPath, filePath);
+      newImageSrc = newData ? `data:${mime};base64,${newData}` : null;
+    } catch {
+      newImageSrc = null;
+    }
+  }
+
   $effect(() => {
     if (file) {
       activeDiff = file;
       loadError = null;
+      oldImageSrc = null;
+      newImageSrc = null;
       return;
     }
 
@@ -63,12 +102,109 @@
     if (!filePath || !repo) {
       activeDiff = null;
       loadError = null;
+      oldImageSrc = null;
+      newImageSrc = null;
       return;
     }
 
     const id = ++requestId;
-    fetchDiff(repo.path, filePath, staged, id);
+    if (isImageFile(filePath)) {
+      activeDiff = null;
+      loadError = null;
+      loadImageDiff(repo.path, filePath);
+    } else {
+      oldImageSrc = null;
+      newImageSrc = null;
+      fetchDiff(repo.path, filePath, staged, id);
+    }
   });
+
+  function hunkLines(hunk: DiffHunk): string[] {
+    return hunk.lines.map((l) => {
+      const prefix =
+        l.line_type === 'Addition' ? '+' : l.line_type === 'Deletion' ? '-' : ' ';
+      return prefix + l.content;
+    });
+  }
+
+  async function onStageHunk(hunk: DiffHunk) {
+    if (!$repoInfo || !$selectedFile) return;
+    try {
+      await tauri.stageHunk(
+        $repoInfo.path,
+        $selectedFile,
+        hunk.old_start,
+        hunk.old_lines,
+        hunk.new_start,
+        hunk.new_lines,
+        hunk.header,
+        hunkLines(hunk),
+      );
+      await refreshStatus();
+      // Re-fetch diff
+      const id = ++requestId;
+      fetchDiff($repoInfo.path, $selectedFile, $selectedFileStaged, id);
+    } catch (err) {
+      addToast(`Stage hunk failed: ${err}`, 'error');
+    }
+  }
+
+  // Compute word-level diffs for adjacent deletion/addition pairs
+  function getWordSegments(hunk: DiffHunk): Map<number, WordDiffSegment[]> {
+    const map = new Map<number, WordDiffSegment[]>();
+    const lines = hunk.lines;
+    let i = 0;
+    while (i < lines.length) {
+      // Find contiguous deletion block
+      const delStart = i;
+      while (i < lines.length && lines[i].line_type === 'Deletion') i++;
+      const delEnd = i;
+      // Find contiguous addition block
+      const addStart = i;
+      while (i < lines.length && lines[i].line_type === 'Addition') i++;
+      const addEnd = i;
+
+      const delCount = delEnd - delStart;
+      const addCount = addEnd - addStart;
+
+      // Only compute word diff for 1:1 pairs (most common case)
+      if (delCount > 0 && addCount > 0) {
+        const pairs = Math.min(delCount, addCount);
+        for (let p = 0; p < pairs; p++) {
+          const { oldSegments, newSegments } = computeWordDiff(
+            lines[delStart + p].content,
+            lines[addStart + p].content
+          );
+          map.set(delStart + p, oldSegments);
+          map.set(addStart + p, newSegments);
+        }
+      }
+
+      if (i === delStart) i++; // skip context lines
+    }
+    return map;
+  }
+
+  async function onUnstageHunk(hunk: DiffHunk) {
+    if (!$repoInfo || !$selectedFile) return;
+    try {
+      await tauri.unstageHunk(
+        $repoInfo.path,
+        $selectedFile,
+        hunk.old_start,
+        hunk.old_lines,
+        hunk.new_start,
+        hunk.new_lines,
+        hunk.header,
+        hunkLines(hunk),
+      );
+      await refreshStatus();
+      const id = ++requestId;
+      fetchDiff($repoInfo.path, $selectedFile, $selectedFileStaged, id);
+    } catch (err) {
+      addToast(`Unstage hunk failed: ${err}`, 'error');
+    }
+  }
 </script>
 
 <div class="diff-view">
@@ -92,11 +228,36 @@
     </div>
     <div class="diff-content">
       {#each activeDiff.hunks as hunk}
-        <HunkHeader {hunk} showActions={showHunkActions} />
-        {#each hunk.lines as line}
-          <DiffLineComponent {line} />
+        {@const wordSegments = getWordSegments(hunk)}
+        <HunkHeader
+          {hunk}
+          showActions={showHunkActions}
+          onStage={$selectedFileStaged ? undefined : () => onStageHunk(hunk)}
+          onDiscard={$selectedFileStaged ? () => onUnstageHunk(hunk) : undefined}
+        />
+        {#each hunk.lines as line, idx}
+          <DiffLineComponent {line} wordSegments={wordSegments.get(idx)} />
         {/each}
       {/each}
+    </div>
+  {:else if oldImageSrc || newImageSrc}
+    <div class="diff-toolbar">
+      <span class="diff-path">{$selectedFile}</span>
+      <span class="diff-path" style="opacity: 0.6">Image diff</span>
+    </div>
+    <div class="image-diff">
+      {#if oldImageSrc}
+        <div class="image-panel">
+          <div class="image-label">Before</div>
+          <img src={oldImageSrc} alt="Old version" />
+        </div>
+      {/if}
+      {#if newImageSrc}
+        <div class="image-panel">
+          <div class="image-label">After</div>
+          <img src={newImageSrc} alt="New version" />
+        </div>
+      {/if}
     </div>
   {:else if loadError}
     <div class="no-diff">
@@ -155,6 +316,39 @@
   .diff-content {
     overflow: auto;
     flex: 1;
+  }
+  .image-diff {
+    display: flex;
+    gap: 16px;
+    padding: 16px;
+    overflow: auto;
+    flex: 1;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .image-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    max-width: 50%;
+  }
+  .image-panel img {
+    max-width: 100%;
+    max-height: 400px;
+    object-fit: contain;
+    border-radius: 4px;
+    background: repeating-conic-gradient(#80808020 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+  }
+  .image-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-secondary);
   }
   .no-diff {
     display: flex;

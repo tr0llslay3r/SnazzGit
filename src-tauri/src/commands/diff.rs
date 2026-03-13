@@ -27,6 +27,32 @@ pub async fn get_commit_diff(
     .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn read_file_at_ref(
+    path: String,
+    file_path: String,
+    git_ref: Option<String>,
+) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        diff::read_file_at_ref(&path, &file_path, git_ref.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn diff_refs(
+    path: String,
+    from_ref: String,
+    to_ref: String,
+) -> Result<Vec<DiffFile>, String> {
+    tokio::task::spawn_blocking(move || diff::diff_refs(&path, &from_ref, &to_ref))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
