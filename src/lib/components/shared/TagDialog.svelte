@@ -1,64 +1,73 @@
 <script lang="ts">
-  import { showStashDialog, addToast } from '$lib/stores/ui';
+  import { showTagDialog, tagTargetCommitId, addToast } from '$lib/stores/ui';
   import { repoInfo, refreshAll } from '$lib/stores/repo';
   import * as tauri from '$lib/utils/tauri';
 
+  let name = $state('');
   let message = $state('');
-  let includeUntracked = $state(false);
   let inputEl: HTMLInputElement = $state(null!);
 
   $effect(() => {
-    if ($showStashDialog && inputEl) {
+    if ($showTagDialog && inputEl) {
       inputEl.focus();
     }
   });
 
-  async function save() {
-    if (!$repoInfo) return;
+  async function create() {
+    if (!$repoInfo || !name.trim()) return;
+    const commitId = $tagTargetCommitId ?? (() => {
+      const head = $repoInfo!.branches.find(b => b.is_head);
+      return head?.commit_id ?? '';
+    })();
+    if (!commitId) {
+      addToast('No commit selected for tag', 'error');
+      return;
+    }
     try {
-      await tauri.stashSave($repoInfo.path, message.trim(), includeUntracked);
+      await tauri.createTag($repoInfo.path, name.trim(), commitId, message.trim() || undefined);
       await refreshAll();
-      addToast('Changes stashed', 'success');
-      message = '';
-      includeUntracked = false;
-      $showStashDialog = false;
+      addToast(`Tag "${name.trim()}" created`, 'success');
+      close();
     } catch (e) {
-      addToast(`Stash failed: ${e}`, 'error');
+      addToast(`Create tag failed: ${e}`, 'error');
     }
   }
 
   function close() {
+    name = '';
     message = '';
-    includeUntracked = false;
-    $showStashDialog = false;
+    $tagTargetCommitId = null;
+    $showTagDialog = false;
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') save();
+    if (e.key === 'Enter' && name.trim()) create();
     if (e.key === 'Escape') close();
   }
 </script>
 
-{#if $showStashDialog}
+{#if $showTagDialog}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="dialog-overlay" onclick={close}>
     <!-- svelte-ignore a11y_interactive_supports_focus, a11y_no_static_element_interactions -->
     <div class="dialog" onclick={(e) => e.stopPropagation()} onkeydown={onKeydown} role="dialog" tabindex="-1">
-      <h3 class="dialog-title">Stash Changes</h3>
+      <h3 class="dialog-title">Create Tag</h3>
       <input
         class="dialog-input"
         type="text"
-        placeholder="Stash message (optional)..."
+        placeholder="Tag name (e.g. v1.0.0)"
         bind:this={inputEl}
+        bind:value={name}
+      />
+      <input
+        class="dialog-input message-input"
+        type="text"
+        placeholder="Message (optional, for annotated tag)"
         bind:value={message}
       />
-      <label class="checkbox-row">
-        <input type="checkbox" bind:checked={includeUntracked} />
-        <span>Include untracked files</span>
-      </label>
       <div class="dialog-actions">
         <button class="btn-secondary" onclick={close}>Cancel</button>
-        <button class="btn-primary" onclick={save}>Stash</button>
+        <button class="btn-primary" onclick={create} disabled={!name.trim()}>Create Tag</button>
       </div>
     </div>
   </div>
@@ -102,17 +111,8 @@
   .dialog-input:focus {
     border-color: var(--accent);
   }
-  .checkbox-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 12px;
-    font-size: 13px;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .checkbox-row input[type="checkbox"] {
-    accent-color: var(--accent);
+  .message-input {
+    margin-top: 8px;
   }
   .dialog-actions {
     display: flex;
@@ -138,5 +138,9 @@
     cursor: pointer;
     font-size: 13px;
     font-weight: 600;
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 </style>

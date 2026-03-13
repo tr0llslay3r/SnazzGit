@@ -144,6 +144,15 @@ export interface Credentials {
   password: string;
 }
 
+export interface ReflogEntry {
+  id: string;
+  short_id: string;
+  message: string;
+  action: string;
+  committer: string;
+  time: number;
+}
+
 export interface CredentialRequest {
   operation: 'fetch' | 'pull' | 'push' | 'clone';
   remoteName?: string;

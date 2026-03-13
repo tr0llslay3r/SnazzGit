@@ -19,7 +19,7 @@
         <button class="hunk-btn stage" onclick={onStage} title="Stage hunk">Stage</button>
       {/if}
       {#if onDiscard}
-        <button class="hunk-btn discard" onclick={onDiscard} title="Discard hunk">Discard</button>
+        <button class="hunk-btn discard" onclick={onDiscard} title="Unstage hunk">Unstage</button>
       {/if}
     </div>
   {/if}
@@ -55,8 +55,8 @@
     color: var(--text-primary);
   }
   .hunk-btn.discard:hover {
-    border-color: var(--danger);
-    color: var(--danger);
+    border-color: var(--warning);
+    color: var(--warning);
   }
   .hunk-btn.stage:hover {
     border-color: var(--success);

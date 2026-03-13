@@ -151,6 +151,104 @@ fn build_ref_map(repo: &Repository) -> Result<HashMap<Oid, Vec<RefInfo>>, GitErr
     Ok(map)
 }
 
+pub fn file_history(
+    path: &str,
+    file_path: &str,
+    limit: usize,
+) -> Result<Vec<CommitInfo>, GitError> {
+    let repo = Repository::open(path)?;
+    let ref_map = build_ref_map(&repo)?;
+
+    let mut revwalk = repo.revwalk()?;
+    revwalk.set_sorting(Sort::TIME | Sort::TOPOLOGICAL)?;
+    if revwalk.push_head().is_err() {
+        return Ok(Vec::new());
+    }
+
+    let mut commits = Vec::new();
+    let target = std::path::Path::new(file_path);
+
+    for oid_result in revwalk {
+        let oid = oid_result?;
+        let commit = repo.find_commit(oid)?;
+        let tree = commit.tree()?;
+
+        // Check if this commit touched the file
+        let has_file = tree.get_path(target).is_ok();
+        let parent_has_same = commit
+            .parent(0)
+            .ok()
+            .and_then(|p| p.tree().ok())
+            .map(|pt| {
+                match (pt.get_path(target), tree.get_path(target)) {
+                    (Ok(pe), Ok(te)) => pe.id() == te.id(),
+                    (Err(_), Err(_)) => true,
+                    _ => false,
+                }
+            })
+            .unwrap_or(!has_file);
+
+        if !parent_has_same {
+            let id = oid.to_string();
+            let short_id = id[..8.min(id.len())].to_string();
+            let author = commit.author();
+            let committer = commit.committer();
+            let parent_ids: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
+            let refs = ref_map.get(&oid).cloned().unwrap_or_default();
+
+            commits.push(CommitInfo {
+                id,
+                short_id,
+                message: commit.message().unwrap_or("").to_string(),
+                summary: commit.summary().unwrap_or("").to_string(),
+                author_name: author.name().unwrap_or("").to_string(),
+                author_email: author.email().unwrap_or("").to_string(),
+                author_time: author.when().seconds(),
+                committer_name: committer.name().unwrap_or("").to_string(),
+                committer_time: committer.when().seconds(),
+                parent_ids,
+                refs,
+            });
+
+            if commits.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    Ok(commits)
+}
+
+pub fn cherry_pick(path: &str, commit_id: &str) -> Result<String, GitError> {
+    let repo = Repository::open(path)?;
+    let oid = Oid::from_str(commit_id)?;
+    let commit = repo.find_commit(oid)?;
+
+    repo.cherrypick(&commit, None)?;
+
+    let index = repo.index()?;
+    if index.has_conflicts() {
+        return Ok("Cherry-pick has conflicts - resolve before committing".to_string());
+    }
+
+    // Auto-commit the cherry-pick
+    let sig = repo.signature().or_else(|_| {
+        git2::Signature::now(
+            commit.author().name().unwrap_or("Unknown"),
+            commit.author().email().unwrap_or("unknown@unknown"),
+        )
+    })?;
+    let tree_id = repo.index()?.write_tree()?;
+    let tree = repo.find_tree(tree_id)?;
+    let head = repo.head()?.peel_to_commit()?;
+    let message = commit.message().unwrap_or("Cherry-picked commit");
+    let new_oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head])?;
+
+    repo.cleanup_state()?;
+
+    Ok(new_oid.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,5 +416,172 @@ mod tests {
         let (_dir, path, merge_oid) = init_repo_with_merge_commit();
         let detail = get_commit_detail(&path, &merge_oid.to_string()).unwrap();
         assert_eq!(detail.parent_ids.len(), 2);
+    }
+
+    fn make_commit_with_file(path: &str, msg: &str, file: &str, content: &str) -> git2::Oid {
+        let repo = git2::Repository::open(path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        std::fs::write(std::path::Path::new(path).join(file), content).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new(file)).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parents: Vec<git2::Commit> = match repo.head() {
+            Ok(head) => vec![head.peel_to_commit().unwrap()],
+            Err(_) => vec![],
+        };
+        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parent_refs).unwrap()
+    }
+
+    #[test]
+    fn test_file_history_returns_commits_touching_file() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_with_file(&path, "Add readme", "readme.txt", "hello\n");
+        make_commit_with_file(&path, "Add other", "other.txt", "other\n");
+        make_commit_with_file(&path, "Update readme", "readme.txt", "hello world\n");
+
+        let history = file_history(&path, "readme.txt", 100).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].summary, "Update readme");
+        assert_eq!(history[1].summary, "Add readme");
+    }
+
+    #[test]
+    fn test_file_history_respects_limit() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_with_file(&path, "v1", "file.txt", "v1\n");
+        make_commit_with_file(&path, "v2", "file.txt", "v2\n");
+        make_commit_with_file(&path, "v3", "file.txt", "v3\n");
+
+        let history = file_history(&path, "file.txt", 2).unwrap();
+        assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn test_file_history_empty_for_nonexistent_file() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_with_file(&path, "Add readme", "readme.txt", "hello\n");
+
+        let history = file_history(&path, "nonexistent.txt", 100).unwrap();
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn test_file_history_empty_repo() {
+        let (_dir, path) = init_empty_repo();
+        let history = file_history(&path, "file.txt", 100).unwrap();
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn test_cherry_pick_applies_commit() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_with_file(&path, "Initial", "base.txt", "base\n");
+
+        // Create a branch
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false).unwrap();
+        }
+
+        // Switch to feature
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let (obj, reference) = repo.revparse_ext("refs/heads/feature").unwrap();
+            repo.checkout_tree(&obj, None).unwrap();
+            repo.set_head(reference.unwrap().name().unwrap()).unwrap();
+        }
+
+        let feature_oid = make_commit_with_file(&path, "Feature commit", "feature.txt", "feature\n");
+
+        // Switch back to the default branch
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let main_ref = if repo.find_branch("main", git2::BranchType::Local).is_ok() {
+                "refs/heads/main"
+            } else {
+                "refs/heads/master"
+            };
+            let (obj, reference) = repo.revparse_ext(main_ref).unwrap();
+            repo.checkout_tree(&obj, None).unwrap();
+            repo.set_head(reference.unwrap().name().unwrap()).unwrap();
+        }
+
+        // Cherry-pick the feature commit onto main
+        let result = cherry_pick(&path, &feature_oid.to_string()).unwrap();
+        assert_eq!(result.len(), 40); // OID hex string
+
+        // Verify the file exists on main now
+        assert!(std::path::Path::new(&path).join("feature.txt").exists());
+    }
+
+    #[test]
+    fn test_cherry_pick_invalid_commit_errors() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "Initial");
+        let result = cherry_pick(&path, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_commits_includes_tag_refs() {
+        let (_dir, path) = init_empty_repo();
+        let oid = make_commit_msg(&path, "Tagged commit");
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let obj = repo.find_object(oid, None).unwrap();
+            repo.tag_lightweight("v1.0", &obj, false).unwrap();
+        }
+
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert_eq!(commits.len(), 1);
+        assert!(commits[0].refs.iter().any(|r| r.name == "v1.0" && matches!(r.ref_type, RefType::Tag)));
+    }
+
+    #[test]
+    fn test_load_commits_includes_annotated_tag_refs() {
+        let (_dir, path) = init_empty_repo();
+        let oid = make_commit_msg(&path, "Annotated tag commit");
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let obj = repo.find_object(oid, None).unwrap();
+            let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+            repo.tag("v2.0", &obj, &sig, "Release v2.0", false).unwrap();
+        }
+
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert_eq!(commits.len(), 1);
+        assert!(commits[0].refs.iter().any(|r| r.name == "v2.0" && matches!(r.ref_type, RefType::Tag)));
+    }
+
+    #[test]
+    fn test_load_commits_includes_head_ref() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "Head commit");
+
+        let commits = load_commits(&path, 100, 0).unwrap();
+        assert!(commits[0].refs.iter().any(|r| r.name == "HEAD" && matches!(r.ref_type, RefType::Head)));
+    }
+
+    #[test]
+    fn test_load_commits_includes_branch_refs() {
+        let (_dir, path) = init_empty_repo();
+        make_commit_msg(&path, "Branch commit");
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false).unwrap();
+        }
+
+        let commits = load_commits(&path, 100, 0).unwrap();
+        // Should have both main/master and feature branch refs
+        let branch_refs: Vec<_> = commits[0].refs.iter()
+            .filter(|r| matches!(r.ref_type, RefType::LocalBranch))
+            .collect();
+        assert!(branch_refs.len() >= 2);
+        assert!(branch_refs.iter().any(|r| r.name == "feature"));
     }
 }

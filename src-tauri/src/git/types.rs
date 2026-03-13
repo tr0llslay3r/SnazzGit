@@ -176,6 +176,15 @@ pub struct ConflictHunk {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HunkApplyParams {
+    pub old_start: u32,
+    pub old_lines: u32,
+    pub new_start: u32,
+    pub new_lines: u32,
+    pub lines: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConflictFile {
     pub path: String,
     pub hunks: Vec<ConflictHunk>,

@@ -10,11 +10,17 @@ pub async fn stash_list(path: String) -> Result<Vec<StashEntry>, String> {
 }
 
 #[tauri::command]
-pub async fn stash_save(path: String, message: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || stash::stash_save(&path, &message))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+pub async fn stash_save(
+    path: String,
+    message: String,
+    include_untracked: Option<bool>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        stash::stash_save(&path, &message, include_untracked.unwrap_or(false))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -90,7 +96,7 @@ mod tests {
     #[tokio::test]
     async fn test_stash_save_and_list() {
         let (_dir, path) = init_repo_dirty();
-        stash_save(path.clone(), "my stash".into()).await.unwrap();
+        stash_save(path.clone(), "my stash".into(), None).await.unwrap();
         let list = stash_list(path).await.unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].message.contains("my stash"));
@@ -99,7 +105,7 @@ mod tests {
     #[tokio::test]
     async fn test_stash_drop() {
         let (_dir, path) = init_repo_dirty();
-        stash_save(path.clone(), "drop me".into()).await.unwrap();
+        stash_save(path.clone(), "drop me".into(), None).await.unwrap();
         let result = stash_drop(path.clone(), 0).await;
         assert!(result.is_ok());
         assert!(stash_list(path).await.unwrap().is_empty());
@@ -108,7 +114,7 @@ mod tests {
     #[tokio::test]
     async fn test_stash_pop() {
         let (_dir, path) = init_repo_dirty();
-        stash_save(path.clone(), "pop me".into()).await.unwrap();
+        stash_save(path.clone(), "pop me".into(), None).await.unwrap();
         let result = stash_pop(path.clone(), 0).await;
         assert!(result.is_ok());
         assert!(stash_list(path).await.unwrap().is_empty());
@@ -117,7 +123,7 @@ mod tests {
     #[tokio::test]
     async fn test_stash_apply() {
         let (_dir, path) = init_repo_dirty();
-        stash_save(path.clone(), "apply me".into()).await.unwrap();
+        stash_save(path.clone(), "apply me".into(), None).await.unwrap();
         let result = stash_apply(path.clone(), 0).await;
         assert!(result.is_ok());
         // apply keeps the stash entry
@@ -126,7 +132,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stash_save_invalid_path() {
-        let result = stash_save("/nonexistent".into(), "msg".into()).await;
+        let result = stash_save("/nonexistent".into(), "msg".into(), None).await;
         assert!(result.is_err());
     }
 }

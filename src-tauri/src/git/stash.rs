@@ -17,15 +17,20 @@ pub fn stash_list(path: &str) -> Result<Vec<StashEntry>, GitError> {
     Ok(entries)
 }
 
-pub fn stash_save(path: &str, message: &str) -> Result<(), GitError> {
+pub fn stash_save(
+    path: &str,
+    message: &str,
+    include_untracked: bool,
+) -> Result<(), GitError> {
     let mut repo = Repository::open(path)?;
     let sig = repo.signature()?;
-    let msg = if message.is_empty() {
-        None
+    let msg = if message.is_empty() { "WIP" } else { message };
+    let flags = if include_untracked {
+        Some(git2::StashFlags::INCLUDE_UNTRACKED)
     } else {
-        Some(message)
+        None
     };
-    repo.stash_save(&sig, msg.unwrap_or("WIP"), None)?;
+    repo.stash_save(&sig, msg, flags)?;
     Ok(())
 }
 
@@ -90,7 +95,7 @@ mod tests {
     fn test_stash_save_and_list() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "dirty.txt", "dirty");
-        stash_save(&path, "my stash").unwrap();
+        stash_save(&path, "my stash", false).unwrap();
         let list = stash_list(&path).unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].message.contains("my stash"));
@@ -101,9 +106,9 @@ mod tests {
     fn test_stash_multiple_entries() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "file1.txt", "first");
-        stash_save(&path, "stash one").unwrap();
+        stash_save(&path, "stash one", false).unwrap();
         stage_new_file(&path, "file2.txt", "second");
-        stash_save(&path, "stash two").unwrap();
+        stash_save(&path, "stash two", false).unwrap();
         let list = stash_list(&path).unwrap();
         assert_eq!(list.len(), 2);
     }
@@ -112,7 +117,7 @@ mod tests {
     fn test_stash_drop_removes_entry() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "file.txt", "content");
-        stash_save(&path, "to drop").unwrap();
+        stash_save(&path, "to drop", false).unwrap();
         stash_drop(&path, 0).unwrap();
         let list = stash_list(&path).unwrap();
         assert!(list.is_empty());
@@ -122,7 +127,7 @@ mod tests {
     fn test_stash_pop_restores_changes() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "popped.txt", "pop me");
-        stash_save(&path, "pop test").unwrap();
+        stash_save(&path, "pop test", false).unwrap();
         // File should be gone from index now
         assert!(!std::path::Path::new(&path).join("popped.txt").exists());
         stash_pop(&path, 0).unwrap();
@@ -134,7 +139,7 @@ mod tests {
     fn test_stash_apply_keeps_entry() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "apply.txt", "apply me");
-        stash_save(&path, "apply test").unwrap();
+        stash_save(&path, "apply test", false).unwrap();
         stash_apply(&path, 0).unwrap();
         let list = stash_list(&path).unwrap();
         // apply keeps the stash entry
@@ -145,7 +150,7 @@ mod tests {
     fn test_stash_pop_invalid_index_errors() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "file.txt", "content");
-        stash_save(&path, "only stash").unwrap();
+        stash_save(&path, "only stash", false).unwrap();
         let result = stash_pop(&path, 5);
         assert!(result.is_err());
     }
@@ -154,7 +159,7 @@ mod tests {
     fn test_stash_drop_invalid_index_errors() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "file.txt", "content");
-        stash_save(&path, "only stash").unwrap();
+        stash_save(&path, "only stash", false).unwrap();
         let result = stash_drop(&path, 5);
         assert!(result.is_err());
     }
@@ -163,7 +168,7 @@ mod tests {
     fn test_stash_apply_invalid_index_errors() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "file.txt", "content");
-        stash_save(&path, "only stash").unwrap();
+        stash_save(&path, "only stash", false).unwrap();
         let result = stash_apply(&path, 5);
         assert!(result.is_err());
     }
@@ -172,7 +177,7 @@ mod tests {
     fn test_stash_save_empty_message_defaults_to_wip() {
         let (_dir, path) = init_repo_with_commit();
         stage_new_file(&path, "file.txt", "content");
-        stash_save(&path, "").unwrap();
+        stash_save(&path, "", false).unwrap();
         let list = stash_list(&path).unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].message.contains("WIP"));

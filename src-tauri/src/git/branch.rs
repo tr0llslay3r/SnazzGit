@@ -90,6 +90,20 @@ pub fn checkout_remote_branch(
     Ok(())
 }
 
+pub fn force_delete_branch(path: &str, name: &str) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let mut branch = repo.find_branch(name, BranchType::Local)?;
+    branch.get_mut().delete()?;
+    Ok(())
+}
+
+pub fn set_upstream(path: &str, branch_name: &str, upstream: Option<&str>) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let mut branch = repo.find_branch(branch_name, BranchType::Local)?;
+    branch.set_upstream(upstream)?;
+    Ok(())
+}
+
 pub fn reset_to_commit(path: &str, commit_id: &str, mode: &str) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
     let oid = git2::Oid::from_str(commit_id)
@@ -372,6 +386,66 @@ mod tests {
     fn test_merge_branch_nonexistent_errors() {
         let (_dir, path) = init_repo_with_commit();
         let result = merge_branch(&path, "no-such-branch");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_force_delete_branch() {
+        let (_dir, path) = init_repo_with_commit();
+        create_branch(&path, "unmerged", true).unwrap();
+        // Force delete should succeed even if branch is unmerged
+        force_delete_branch(&path, "unmerged").unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        assert!(repo.find_branch("unmerged", git2::BranchType::Local).is_err());
+    }
+
+    #[test]
+    fn test_force_delete_branch_nonexistent_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = force_delete_branch(&path, "no-such-branch");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_upstream() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        checkout_remote_branch(&path, "origin/feature-x", "feature-x", false).unwrap();
+        // Initially no upstream
+        let repo = git2::Repository::open(&path).unwrap();
+        let branch = repo.find_branch("feature-x", git2::BranchType::Local).unwrap();
+        assert!(branch.upstream().is_err());
+        drop(branch);
+        drop(repo);
+
+        // Set upstream
+        set_upstream(&path, "feature-x", Some("origin/feature-x")).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let branch = repo.find_branch("feature-x", git2::BranchType::Local).unwrap();
+        assert_eq!(branch.upstream().unwrap().name().unwrap().unwrap(), "origin/feature-x");
+    }
+
+    #[test]
+    fn test_set_upstream_unset() {
+        let (_remote_dir, _clone_dir, path) = init_repo_with_remote();
+        checkout_remote_branch(&path, "origin/feature-x", "feature-x", true).unwrap();
+        // Verify upstream is set
+        let repo = git2::Repository::open(&path).unwrap();
+        let branch = repo.find_branch("feature-x", git2::BranchType::Local).unwrap();
+        assert!(branch.upstream().is_ok());
+        drop(branch);
+        drop(repo);
+
+        // Unset upstream
+        set_upstream(&path, "feature-x", None).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let branch = repo.find_branch("feature-x", git2::BranchType::Local).unwrap();
+        assert!(branch.upstream().is_err());
+    }
+
+    #[test]
+    fn test_set_upstream_nonexistent_branch_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = set_upstream(&path, "nonexistent", Some("origin/main"));
         assert!(result.is_err());
     }
 }

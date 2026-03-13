@@ -73,6 +73,26 @@ pub async fn create_commit(
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+pub async fn file_history(
+    path: String,
+    file_path: String,
+    limit: usize,
+) -> Result<Vec<CommitInfo>, String> {
+    tokio::task::spawn_blocking(move || commit::file_history(&path, &file_path, limit))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn cherry_pick_commit(path: String, commit_id: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || commit::cherry_pick(&path, &commit_id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,6 +240,91 @@ mod tests {
     #[tokio::test]
     async fn test_create_commit_invalid_path() {
         let result = create_commit("/nonexistent/path".into(), "msg".into(), false).await;
+        assert!(result.is_err());
+    }
+
+    fn make_commit_with_file(path: &str, msg: &str, file: &str, content: &str) -> git2::Oid {
+        let repo = git2::Repository::open(path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        std::fs::write(std::path::Path::new(path).join(file), content).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new(file)).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parents: Vec<git2::Commit> = match repo.head() {
+            Ok(head) => vec![head.peel_to_commit().unwrap()],
+            Err(_) => vec![],
+        };
+        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parent_refs).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_file_history_command() {
+        let (_dir, path) = init_repo();
+        set_user_config(&path);
+        make_commit_with_file(&path, "Add file", "tracked.txt", "v1\n");
+        make_commit_with_file(&path, "Other", "other.txt", "other\n");
+        make_commit_with_file(&path, "Update file", "tracked.txt", "v2\n");
+
+        let result = file_history(path, "tracked.txt".into(), 100).await;
+        assert!(result.is_ok());
+        let commits = result.unwrap();
+        assert_eq!(commits.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_file_history_invalid_path() {
+        let result = file_history("/nonexistent/path".into(), "file.txt".into(), 100).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_cherry_pick_commit_command() {
+        let (_dir, path) = init_repo();
+        set_user_config(&path);
+        make_commit_with_file(&path, "Base", "base.txt", "base\n");
+
+        // Create feature branch and add a commit
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false).unwrap();
+            let (obj, reference) = repo.revparse_ext("refs/heads/feature").unwrap();
+            repo.checkout_tree(&obj, None).unwrap();
+            repo.set_head(reference.unwrap().name().unwrap()).unwrap();
+        }
+
+        let feature_oid = make_commit_with_file(&path, "Feature work", "feature.txt", "feat\n");
+
+        // Back to the default branch
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let main_ref = if repo.find_branch("main", git2::BranchType::Local).is_ok() {
+                "refs/heads/main"
+            } else {
+                "refs/heads/master"
+            };
+            let (obj, reference) = repo.revparse_ext(main_ref).unwrap();
+            repo.checkout_tree(&obj, None).unwrap();
+            repo.set_head(reference.unwrap().name().unwrap()).unwrap();
+        }
+
+        let result = cherry_pick_commit(path, feature_oid.to_string()).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 40);
+    }
+
+    #[tokio::test]
+    async fn test_cherry_pick_commit_invalid_oid() {
+        let (_dir, path) = init_repo();
+        set_user_config(&path);
+        make_commit(&path, "Base");
+        let result = cherry_pick_commit(
+            path,
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef".into(),
+        ).await;
         assert!(result.is_err());
     }
 }

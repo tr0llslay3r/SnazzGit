@@ -11,6 +11,7 @@ import type {
   RecentRepo,
   ConflictFile,
   Credentials,
+  ReflogEntry,
 } from '$lib/types';
 
 // CLI
@@ -87,6 +88,12 @@ export const getWorkingDiff = (path: string, filePath: string, staged: boolean) 
 export const getCommitDiff = (path: string, commitId: string, filePath?: string) =>
   invoke<DiffFile[]>('get_commit_diff', { path, commitId, filePath });
 
+export const diffRefs = (path: string, fromRef: string, toRef: string) =>
+  invoke<DiffFile[]>('diff_refs', { path, fromRef, toRef });
+
+export const readFileAtRef = (path: string, filePath: string, gitRef?: string) =>
+  invoke<string | null>('read_file_at_ref', { path, filePath, gitRef: gitRef ?? null });
+
 // Status
 export const getStatus = (path: string) =>
   invoke<WorkingTreeStatus>('get_status', { path });
@@ -109,6 +116,28 @@ export const discardFile = (path: string, filePath: string) =>
 export const deleteFile = (path: string, filePath: string) =>
   invoke<void>('delete_file', { path, filePath });
 
+export const stageHunk = (
+  path: string,
+  filePath: string,
+  oldStart: number,
+  oldLines: number,
+  newStart: number,
+  newLines: number,
+  header: string,
+  lines: string[],
+) => invoke<void>('stage_hunk', { path, filePath, oldStart, oldLines, newStart, newLines, header, lines });
+
+export const unstageHunk = (
+  path: string,
+  filePath: string,
+  oldStart: number,
+  oldLines: number,
+  newStart: number,
+  newLines: number,
+  header: string,
+  lines: string[],
+) => invoke<void>('unstage_hunk', { path, filePath, oldStart, oldLines, newStart, newLines, header, lines });
+
 export const addToGitignore = (path: string, pattern: string) =>
   invoke<void>('add_to_gitignore', { path, pattern });
 
@@ -116,8 +145,8 @@ export const addToGitignore = (path: string, pattern: string) =>
 export const stashList = (path: string) =>
   invoke<StashEntry[]>('stash_list', { path });
 
-export const stashSave = (path: string, message: string) =>
-  invoke<void>('stash_save', { path, message });
+export const stashSave = (path: string, message: string, includeUntracked?: boolean) =>
+  invoke<void>('stash_save', { path, message, includeUntracked: includeUntracked ?? null });
 
 export const stashPop = (path: string, index: number) =>
   invoke<void>('stash_pop', { path, index });
@@ -155,6 +184,67 @@ export const addRecentRepo = (path: string, name: string) =>
 
 export const removeRecentRepo = (path: string) =>
   invoke<RecentRepo[]>('remove_recent_repo', { path });
+
+// File history
+export const fileHistory = (path: string, filePath: string, limit: number) =>
+  invoke<CommitInfo[]>('file_history', { path, filePath, limit });
+
+// Cherry-pick
+export const cherryPickCommit = (path: string, commitId: string) =>
+  invoke<string>('cherry_pick_commit', { path, commitId });
+
+// Tags
+export const createTag = (path: string, name: string, commitId: string, message?: string) =>
+  invoke<void>('create_tag', { path, name, commitId, message: message ?? null });
+
+export const deleteTag = (path: string, name: string) =>
+  invoke<void>('delete_tag', { path, name });
+
+// Reflog
+export const getReflog = (path: string, limit: number) =>
+  invoke<ReflogEntry[]>('get_reflog', { path, limit });
+
+// Rebase
+export const rebaseOnto = (path: string, upstreamRef: string) =>
+  invoke<string>('rebase_onto', { path, upstreamRef });
+
+export const rebaseAbort = (path: string) =>
+  invoke<void>('rebase_abort', { path });
+
+export const rebaseContinue = (path: string) =>
+  invoke<string>('rebase_continue', { path });
+
+export const squashCommits = (path: string, count: number, message: string) =>
+  invoke<string>('squash_commits', { path, count, message });
+
+// Force push
+export const forcePush = (path: string, remoteName: string, credentials?: Credentials) =>
+  invoke<void>('force_push', { path, remoteName, credentials });
+
+// Force delete branch
+export const forceDeleteBranch = (path: string, name: string) =>
+  invoke<void>('force_delete_branch', { path, name });
+
+// Remote management
+export const addRemote = (path: string, name: string, url: string) =>
+  invoke<void>('add_remote', { path, name, url });
+
+export const removeRemote = (path: string, name: string) =>
+  invoke<void>('remove_remote', { path, name });
+
+export const renameRemote = (path: string, oldName: string, newName: string) =>
+  invoke<void>('rename_remote', { path, oldName, newName });
+
+// Set upstream
+export const setUpstream = (path: string, branchName: string, upstream?: string) =>
+  invoke<void>('set_upstream', { path, branchName, upstream: upstream ?? null });
+
+// File watcher
+export const startWatching = (path: string) =>
+  invoke<void>('start_watching', { path });
+
+export const stopWatching = () =>
+  invoke<void>('stop_watching');
 
 // Conflict resolution
 export const getConflictDiff = (path: string, filePath: string) =>

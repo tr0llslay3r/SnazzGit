@@ -143,6 +143,55 @@ pub fn delete_file(repo_path: &str, file_path: &str) -> Result<(), GitError> {
     Ok(())
 }
 
+pub fn stage_hunk(
+    path: &str,
+    file_path: &str,
+    hunk: &super::types::HunkApplyParams,
+) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let patch = build_hunk_patch(file_path, hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines, &hunk.lines);
+    let diff = git2::Diff::from_buffer(patch.as_bytes())?;
+    repo.apply(&diff, git2::ApplyLocation::Index, None)?;
+    Ok(())
+}
+
+pub fn unstage_hunk(
+    path: &str,
+    file_path: &str,
+    hunk: &super::types::HunkApplyParams,
+) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    // Reverse patch: swap old/new and flip +/-
+    let reversed_lines: Vec<String> = hunk.lines.iter().map(|line| {
+        if let Some(rest) = line.strip_prefix('+') {
+            format!("-{rest}")
+        } else if let Some(rest) = line.strip_prefix('-') {
+            format!("+{rest}")
+        } else {
+            line.clone()
+        }
+    }).collect();
+    let patch = build_hunk_patch(file_path, hunk.new_start, hunk.new_lines, hunk.old_start, hunk.old_lines, &reversed_lines);
+    let diff = git2::Diff::from_buffer(patch.as_bytes())?;
+    repo.apply(&diff, git2::ApplyLocation::Index, None)?;
+    Ok(())
+}
+
+fn build_hunk_patch(file_path: &str, old_start: u32, old_lines: u32, new_start: u32, new_lines: u32, lines: &[String]) -> String {
+    let mut patch = String::new();
+    patch.push_str(&format!("diff --git a/{file_path} b/{file_path}\n"));
+    patch.push_str(&format!("--- a/{file_path}\n"));
+    patch.push_str(&format!("+++ b/{file_path}\n"));
+    patch.push_str(&format!("@@ -{old_start},{old_lines} +{new_start},{new_lines} @@\n"));
+    for line in lines {
+        patch.push_str(line);
+        if !line.ends_with('\n') {
+            patch.push('\n');
+        }
+    }
+    patch
+}
+
 pub fn add_to_gitignore(repo_path: &str, pattern: &str) -> Result<(), GitError> {
     let gitignore_path = Path::new(repo_path).join(".gitignore");
 
@@ -331,5 +380,77 @@ mod tests {
         let modified = status.unstaged.iter().find(|f| f.path == "mod.txt");
         assert!(modified.is_some());
         assert!(matches!(modified.unwrap().status, FileStatusType::Modified));
+    }
+
+    #[test]
+    fn test_stage_hunk_stages_partial_change() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "file.txt", "line1\nline2\nline3\n");
+        write_file(&path, "file.txt", "line1\nmodified\nline3\n");
+
+        let hunk = super::super::types::HunkApplyParams {
+            old_start: 1,
+            old_lines: 3,
+            new_start: 1,
+            new_lines: 3,
+            lines: vec![
+                " line1\n".to_string(),
+                "-line2\n".to_string(),
+                "+modified\n".to_string(),
+                " line3\n".to_string(),
+            ],
+        };
+
+        stage_hunk(&path, "file.txt", &hunk).unwrap();
+
+        let status = get_status(&path).unwrap();
+        assert!(status.staged.iter().any(|f| f.path == "file.txt"));
+    }
+
+    #[test]
+    fn test_unstage_hunk_reverses_staged_change() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "file.txt", "line1\nline2\nline3\n");
+        write_file(&path, "file.txt", "line1\nmodified\nline3\n");
+
+        // Stage the whole file first
+        stage_file(&path, "file.txt").unwrap();
+        assert!(!get_status(&path).unwrap().staged.is_empty());
+
+        // Unstage the hunk
+        let hunk = super::super::types::HunkApplyParams {
+            old_start: 1,
+            old_lines: 3,
+            new_start: 1,
+            new_lines: 3,
+            lines: vec![
+                " line1\n".to_string(),
+                "-line2\n".to_string(),
+                "+modified\n".to_string(),
+                " line3\n".to_string(),
+            ],
+        };
+
+        unstage_hunk(&path, "file.txt", &hunk).unwrap();
+
+        let status = get_status(&path).unwrap();
+        assert!(status.staged.is_empty(), "staged should be empty after unstaging the hunk");
+        assert!(status.unstaged.iter().any(|f| f.path == "file.txt"), "file should appear in unstaged");
+    }
+
+    #[test]
+    fn test_build_hunk_patch_format() {
+        let patch = build_hunk_patch("test.txt", 1, 3, 1, 3, &[
+            " context\n".to_string(),
+            "-old\n".to_string(),
+            "+new\n".to_string(),
+            " context2\n".to_string(),
+        ]);
+        assert!(patch.contains("diff --git a/test.txt b/test.txt"));
+        assert!(patch.contains("--- a/test.txt"));
+        assert!(patch.contains("+++ b/test.txt"));
+        assert!(patch.contains("@@ -1,3 +1,3 @@"));
+        assert!(patch.contains("-old"));
+        assert!(patch.contains("+new"));
     }
 }

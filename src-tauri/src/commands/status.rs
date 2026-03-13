@@ -1,5 +1,5 @@
 use crate::git::status;
-use crate::git::types::WorkingTreeStatus;
+use crate::git::types::{HunkApplyParams, WorkingTreeStatus};
 
 #[tauri::command]
 pub async fn get_status(path: String) -> Result<WorkingTreeStatus, String> {
@@ -55,6 +55,48 @@ pub async fn delete_file(path: String, file_path: String) -> Result<(), String> 
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn stage_hunk(
+    path: String,
+    file_path: String,
+    old_start: u32,
+    old_lines: u32,
+    new_start: u32,
+    new_lines: u32,
+    _header: String,
+    lines: Vec<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let hunk = HunkApplyParams { old_start, old_lines, new_start, new_lines, lines };
+        status::stage_hunk(&path, &file_path, &hunk)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn unstage_hunk(
+    path: String,
+    file_path: String,
+    old_start: u32,
+    old_lines: u32,
+    new_start: u32,
+    new_lines: u32,
+    _header: String,
+    lines: Vec<String>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let hunk = HunkApplyParams { old_start, old_lines, new_start, new_lines, lines };
+        status::unstage_hunk(&path, &file_path, &hunk)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -182,5 +224,72 @@ mod tests {
         write_file(&path, "tracked.txt", "modified");
         let result = discard_file(path, "tracked.txt".into()).await;
         assert!(result.is_ok());
+    }
+
+    fn commit_file(repo_path: &str, name: &str, content: &str) {
+        write_file(repo_path, name, content);
+        let repo = git2::Repository::open(repo_path).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new(name)).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "add file", &tree, &[&parent])
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_stage_hunk_command() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "file.txt", "line1\nline2\nline3\n");
+        write_file(&path, "file.txt", "line1\nmodified\nline3\n");
+
+        let result = stage_hunk(
+            path.clone(),
+            "file.txt".into(),
+            1, 3, 1, 3,
+            "@@ -1,3 +1,3 @@".into(),
+            vec![
+                " line1\n".into(),
+                "-line2\n".into(),
+                "+modified\n".into(),
+                " line3\n".into(),
+            ],
+        ).await;
+        assert!(result.is_ok());
+
+        let s = get_status(path).await.unwrap();
+        assert!(s.staged.iter().any(|f| f.path == "file.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_unstage_hunk_command() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "file.txt", "line1\nline2\nline3\n");
+        write_file(&path, "file.txt", "line1\nmodified\nline3\n");
+
+        // Stage the whole file first
+        stage_file(path.clone(), "file.txt".into()).await.unwrap();
+        assert!(!get_status(path.clone()).await.unwrap().staged.is_empty());
+
+        // Unstage via hunk
+        let result = unstage_hunk(
+            path.clone(),
+            "file.txt".into(),
+            1, 3, 1, 3,
+            "@@ -1,3 +1,3 @@".into(),
+            vec![
+                " line1\n".into(),
+                "-line2\n".into(),
+                "+modified\n".into(),
+                " line3\n".into(),
+            ],
+        ).await;
+        assert!(result.is_ok());
+
+        let s = get_status(path).await.unwrap();
+        assert!(s.staged.is_empty());
     }
 }
