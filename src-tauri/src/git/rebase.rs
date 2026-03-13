@@ -174,4 +174,81 @@ mod tests {
         let result = squash_commits(&path, 5, "nope");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_rebase_onto_fast_forward() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, "Base", "base.txt", "base\n");
+
+        // Create a feature branch from base
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let head = repo.head().unwrap().peel_to_commit().unwrap();
+            repo.branch("feature", &head, false).unwrap();
+        }
+
+        // Add commits on master
+        make_commit(&path, "Master1", "m1.txt", "m1\n");
+        make_commit(&path, "Master2", "m2.txt", "m2\n");
+
+        // Checkout feature
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let (obj, reference) = repo.revparse_ext("refs/heads/feature").unwrap();
+            repo.checkout_tree(&obj, None).unwrap();
+            repo.set_head(reference.unwrap().name().unwrap()).unwrap();
+        }
+
+        // Add a commit on feature
+        make_commit(&path, "Feature1", "f1.txt", "f1\n");
+
+        // Rebase feature onto default branch
+        let repo = git2::Repository::open(&path).unwrap();
+        let main_name = if repo.find_branch("main", git2::BranchType::Local).is_ok() {
+            "main"
+        } else {
+            "master"
+        };
+        drop(repo);
+        let result = rebase_onto(&path, main_name).unwrap();
+        assert!(result.contains("Rebase complete"));
+        assert!(result.contains("1 commit"));
+    }
+
+    #[test]
+    fn test_rebase_onto_invalid_ref_errors() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, "Base", "base.txt", "base\n");
+        let result = rebase_onto(&path, "nonexistent-branch");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rebase_abort_no_rebase_errors() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, "Base", "base.txt", "base\n");
+        // No rebase in progress, should error
+        let result = rebase_abort(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_squash_preserves_tree() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, "First", "a.txt", "a\n");
+        make_commit(&path, "Second", "b.txt", "b\n");
+        make_commit(&path, "Third", "c.txt", "c\n");
+
+        squash_commits(&path, 3, "Squashed all").unwrap();
+
+        // All files should still exist
+        assert!(std::path::Path::new(&path).join("a.txt").exists());
+        assert!(std::path::Path::new(&path).join("b.txt").exists());
+        assert!(std::path::Path::new(&path).join("c.txt").exists());
+
+        // HEAD message should be the squash message
+        let repo = git2::Repository::open(&path).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(head.message().unwrap(), "Squashed all");
+    }
 }

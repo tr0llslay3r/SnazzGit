@@ -381,4 +381,76 @@ mod tests {
         assert!(modified.is_some());
         assert!(matches!(modified.unwrap().status, FileStatusType::Modified));
     }
+
+    #[test]
+    fn test_stage_hunk_stages_partial_change() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "file.txt", "line1\nline2\nline3\n");
+        write_file(&path, "file.txt", "line1\nmodified\nline3\n");
+
+        let hunk = super::super::types::HunkApplyParams {
+            old_start: 1,
+            old_lines: 3,
+            new_start: 1,
+            new_lines: 3,
+            lines: vec![
+                " line1\n".to_string(),
+                "-line2\n".to_string(),
+                "+modified\n".to_string(),
+                " line3\n".to_string(),
+            ],
+        };
+
+        stage_hunk(&path, "file.txt", &hunk).unwrap();
+
+        let status = get_status(&path).unwrap();
+        assert!(status.staged.iter().any(|f| f.path == "file.txt"));
+    }
+
+    #[test]
+    fn test_unstage_hunk_reverses_staged_change() {
+        let (_dir, path) = init_repo_with_commit();
+        commit_file(&path, "file.txt", "line1\nline2\nline3\n");
+        write_file(&path, "file.txt", "line1\nmodified\nline3\n");
+
+        // Stage the whole file first
+        stage_file(&path, "file.txt").unwrap();
+        assert!(!get_status(&path).unwrap().staged.is_empty());
+
+        // Unstage the hunk
+        let hunk = super::super::types::HunkApplyParams {
+            old_start: 1,
+            old_lines: 3,
+            new_start: 1,
+            new_lines: 3,
+            lines: vec![
+                " line1\n".to_string(),
+                "-line2\n".to_string(),
+                "+modified\n".to_string(),
+                " line3\n".to_string(),
+            ],
+        };
+
+        unstage_hunk(&path, "file.txt", &hunk).unwrap();
+
+        let status = get_status(&path).unwrap();
+        assert!(status.staged.is_empty(), "staged should be empty after unstaging the hunk");
+        assert!(status.unstaged.iter().any(|f| f.path == "file.txt"), "file should appear in unstaged");
+    }
+
+    #[test]
+    fn test_build_hunk_patch_format() {
+        let patch = build_hunk_patch("test.txt", 1, 3, 1, 3, &[
+            " context\n".to_string(),
+            "-old\n".to_string(),
+            "+new\n".to_string(),
+            " context2\n".to_string(),
+        ]);
+        assert!(patch.contains("diff --git a/test.txt b/test.txt"));
+        assert!(patch.contains("--- a/test.txt"));
+        assert!(patch.contains("+++ b/test.txt"));
+        assert!(patch.contains("@@ -1,3 +1,3 @@"));
+        assert!(patch.contains("-old"));
+        assert!(patch.contains("+new"));
+    }
 }

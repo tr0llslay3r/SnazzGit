@@ -510,6 +510,91 @@ mod tests {
             .iter()
             .any(|l| l.content.contains("line2") && matches!(l.line_type, DiffLineType::Addition)));
     }
+
+    #[test]
+    fn test_diff_refs_shows_differences() {
+        let (_dir, path) = init_repo();
+        let oid1 = make_commit(&path, &[("foo.txt", "line1\n")]);
+        let oid2 = make_commit(&path, &[("foo.txt", "line1\nline2\n")]);
+
+        let files = diff_refs(&path, &oid1.to_string(), &oid2.to_string()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "foo.txt");
+        let all_lines: Vec<_> = files[0].hunks.iter().flat_map(|h| &h.lines).collect();
+        assert!(all_lines
+            .iter()
+            .any(|l| l.content.contains("line2") && matches!(l.line_type, DiffLineType::Addition)));
+    }
+
+    #[test]
+    fn test_diff_refs_no_changes() {
+        let (_dir, path) = init_repo();
+        let oid = make_commit(&path, &[("foo.txt", "same\n")]);
+        let files = diff_refs(&path, &oid.to_string(), &oid.to_string()).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_diff_refs_multiple_files() {
+        let (_dir, path) = init_repo();
+        let oid1 = make_commit(&path, &[("a.txt", "aaa\n")]);
+        let oid2 = make_commit(&path, &[("a.txt", "aaa changed\n"), ("b.txt", "bbb\n")]);
+
+        let files = diff_refs(&path, &oid1.to_string(), &oid2.to_string()).unwrap();
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn test_diff_refs_invalid_ref_errors() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("foo.txt", "hello\n")]);
+        let result = diff_refs(&path, "nonexistent-ref", "HEAD");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_read_file_at_ref_returns_content() {
+        let (_dir, path) = init_repo();
+        let oid = make_commit(&path, &[("hello.txt", "hello world\n")]);
+        let result = read_file_at_ref(&path, "hello.txt", Some(&oid.to_string())).unwrap();
+        assert!(result.is_some());
+        // Content is base64 encoded
+        use base64::Engine;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(result.unwrap())
+            .unwrap();
+        assert_eq!(String::from_utf8(decoded).unwrap(), "hello world\n");
+    }
+
+    #[test]
+    fn test_read_file_at_ref_nonexistent_file_returns_none() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("hello.txt", "hello\n")]);
+        let result = read_file_at_ref(&path, "nonexistent.txt", Some("HEAD")).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_read_file_at_ref_working_tree() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("seed.txt", "seed\n")]);
+        fs::write(PathBuf::from(&path).join("workfile.txt"), "working content\n").unwrap();
+        let result = read_file_at_ref(&path, "workfile.txt", None).unwrap();
+        assert!(result.is_some());
+        use base64::Engine;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(result.unwrap())
+            .unwrap();
+        assert_eq!(String::from_utf8(decoded).unwrap(), "working content\n");
+    }
+
+    #[test]
+    fn test_read_file_at_ref_working_tree_nonexistent_returns_none() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("seed.txt", "seed\n")]);
+        let result = read_file_at_ref(&path, "no_such_file.txt", None).unwrap();
+        assert!(result.is_none());
+    }
 }
 
 fn parse_diff(diff: &git2::Diff, file_path: &str) -> Result<DiffFile, GitError> {
