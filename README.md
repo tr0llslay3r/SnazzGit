@@ -9,19 +9,27 @@ A snazzy, cross-platform Git GUI client built with [Tauri 2](https://tauri.app),
 ## Features
 
 - **Commit History & Graph** -- visual branch/merge graph with virtual-scrolled commit list
-- **Staging Area** -- stage, unstage, and discard changes with resizable split panels
-- **Diff Viewer** -- syntax-highlighted diffs with hunk-level staging
-- **Branch Management** -- create, checkout, rename, delete, merge branches
+- **Staging Area** -- stage, unstage, and discard changes with hunk-level staging and resizable split panels
+- **Diff Viewer** -- syntax-highlighted unified diffs with word-level inline highlighting and image diff support
+- **Branch Management** -- create, checkout, rename, delete, merge, rebase branches
+- **Cherry-Pick** -- apply individual commits onto the current branch
+- **Squash** -- squash a range of commits into one
+- **Tag Operations** -- create, delete, and push tags
 - **Reset** -- soft, mixed, or hard reset to any commit via context menu
-- **Remote Operations** -- fetch (with prune), pull, and push
-- **Stash** -- save, apply, pop, and drop stashes
+- **Remote Operations** -- fetch (with prune), pull, push, force push (--force-with-lease), add/remove/rename remotes
+- **Stash** -- save (with untracked option), apply, pop, and drop stashes
 - **Blame** -- per-line blame annotations
 - **Search** -- live search commits by message, author, or SHA (Ctrl+K)
+- **File History** -- view all commits that touched a specific file
+- **Compare Refs** -- diff between any two branches, tags, or commits
+- **Reflog** -- browse reflog entries with jump and cherry-pick actions
 - **Gitignore** -- add files, patterns, or directories to `.gitignore` from the context menu
 - **Merge** -- merge branches with conflict detection
 - **Conflict Resolution** -- 3-way merge editor for resolving conflicts
 - **Clone** -- clone repositories with progress tracking
 - **Recent Repositories** -- quick access to recently opened repos
+- **Drag & Drop** -- open repositories by dropping folders onto the window
+- **File System Watching** -- auto-refresh working tree status on external file changes
 
 ## Theming
 
@@ -35,8 +43,13 @@ Create your own themes in the editor and they're automatically saved to `~/.conf
 |----------|--------|
 | `Ctrl+K` | Search commits |
 | `Ctrl+B` | New branch |
+| `Ctrl+D` | Compare refs |
+| `Ctrl+G` | Stash dialog |
+| `Ctrl+Shift+S` | Stage all files |
+| `Ctrl+Shift+U` | Unstage all files |
 | `Ctrl+Enter` | Commit (when in commit message box) |
 | `Ctrl+A` | Select all unstaged changes |
+| `Escape` | Close current panel / deselect |
 
 ## Installation
 
