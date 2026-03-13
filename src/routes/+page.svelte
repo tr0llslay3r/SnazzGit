@@ -365,13 +365,6 @@
     flex: 1;
     overflow: hidden;
   }
-  .empty-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: var(--text-secondary);
-  }
   .welcome {
     flex: 1;
     display: flex;

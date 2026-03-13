@@ -1,5 +1,5 @@
 use crate::git::status;
-use crate::git::types::WorkingTreeStatus;
+use crate::git::types::{HunkApplyParams, WorkingTreeStatus};
 
 #[tauri::command]
 pub async fn get_status(path: String) -> Result<WorkingTreeStatus, String> {
@@ -58,6 +58,7 @@ pub async fn delete_file(path: String, file_path: String) -> Result<(), String> 
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn stage_hunk(
     path: String,
     file_path: String,
@@ -65,13 +66,12 @@ pub async fn stage_hunk(
     old_lines: u32,
     new_start: u32,
     new_lines: u32,
-    header: String,
+    _header: String,
     lines: Vec<String>,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        status::stage_hunk(
-            &path, &file_path, old_start, old_lines, new_start, new_lines, &header, &lines,
-        )
+        let hunk = HunkApplyParams { old_start, old_lines, new_start, new_lines, lines };
+        status::stage_hunk(&path, &file_path, &hunk)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -79,6 +79,7 @@ pub async fn stage_hunk(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn unstage_hunk(
     path: String,
     file_path: String,
@@ -86,13 +87,12 @@ pub async fn unstage_hunk(
     old_lines: u32,
     new_start: u32,
     new_lines: u32,
-    header: String,
+    _header: String,
     lines: Vec<String>,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        status::unstage_hunk(
-            &path, &file_path, old_start, old_lines, new_start, new_lines, &header, &lines,
-        )
+        let hunk = HunkApplyParams { old_start, old_lines, new_start, new_lines, lines };
+        status::unstage_hunk(&path, &file_path, &hunk)
     })
     .await
     .map_err(|e| e.to_string())?

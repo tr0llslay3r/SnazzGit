@@ -146,78 +146,50 @@ pub fn delete_file(repo_path: &str, file_path: &str) -> Result<(), GitError> {
 pub fn stage_hunk(
     path: &str,
     file_path: &str,
-    old_start: u32,
-    old_lines: u32,
-    new_start: u32,
-    new_lines: u32,
-    _header: &str,
-    lines: &[String],
+    hunk: &super::types::HunkApplyParams,
 ) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
-
-    // Build a patch in unified diff format — git2 requires the full diff header
-    let mut patch = String::new();
-    patch.push_str(&format!("diff --git a/{} b/{}\n", file_path, file_path));
-    patch.push_str(&format!("--- a/{}\n", file_path));
-    patch.push_str(&format!("+++ b/{}\n", file_path));
-    patch.push_str(&format!(
-        "@@ -{},{} +{},{} @@\n",
-        old_start, old_lines, new_start, new_lines
-    ));
-    for line in lines {
-        patch.push_str(line);
-        if !line.ends_with('\n') {
-            patch.push('\n');
-        }
-    }
-
+    let patch = build_hunk_patch(file_path, hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines, &hunk.lines);
     let diff = git2::Diff::from_buffer(patch.as_bytes())?;
     repo.apply(&diff, git2::ApplyLocation::Index, None)?;
-
     Ok(())
 }
 
 pub fn unstage_hunk(
     path: &str,
     file_path: &str,
-    old_start: u32,
-    old_lines: u32,
-    new_start: u32,
-    new_lines: u32,
-    _header: &str,
-    lines: &[String],
+    hunk: &super::types::HunkApplyParams,
 ) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
-
-    // Build a reverse patch to unstage: swap +/- and old/new
-    let mut patch = String::new();
-    patch.push_str(&format!("diff --git a/{} b/{}\n", file_path, file_path));
-    patch.push_str(&format!("--- a/{}\n", file_path));
-    patch.push_str(&format!("+++ b/{}\n", file_path));
-    patch.push_str(&format!(
-        "@@ -{},{} +{},{} @@\n",
-        new_start, new_lines, old_start, old_lines
-    ));
-    for line in lines {
-        // Reverse: + becomes -, - becomes +
-        if line.starts_with('+') {
-            patch.push('-');
-            patch.push_str(&line[1..]);
-        } else if line.starts_with('-') {
-            patch.push('+');
-            patch.push_str(&line[1..]);
+    // Reverse patch: swap old/new and flip +/-
+    let reversed_lines: Vec<String> = hunk.lines.iter().map(|line| {
+        if let Some(rest) = line.strip_prefix('+') {
+            format!("-{rest}")
+        } else if let Some(rest) = line.strip_prefix('-') {
+            format!("+{rest}")
         } else {
-            patch.push_str(line);
+            line.clone()
         }
-        if !patch.ends_with('\n') {
+    }).collect();
+    let patch = build_hunk_patch(file_path, hunk.new_start, hunk.new_lines, hunk.old_start, hunk.old_lines, &reversed_lines);
+    let diff = git2::Diff::from_buffer(patch.as_bytes())?;
+    repo.apply(&diff, git2::ApplyLocation::Index, None)?;
+    Ok(())
+}
+
+fn build_hunk_patch(file_path: &str, old_start: u32, old_lines: u32, new_start: u32, new_lines: u32, lines: &[String]) -> String {
+    let mut patch = String::new();
+    patch.push_str(&format!("diff --git a/{file_path} b/{file_path}\n"));
+    patch.push_str(&format!("--- a/{file_path}\n"));
+    patch.push_str(&format!("+++ b/{file_path}\n"));
+    patch.push_str(&format!("@@ -{old_start},{old_lines} +{new_start},{new_lines} @@\n"));
+    for line in lines {
+        patch.push_str(line);
+        if !line.ends_with('\n') {
             patch.push('\n');
         }
     }
-
-    let diff = git2::Diff::from_buffer(patch.as_bytes())?;
-    repo.apply(&diff, git2::ApplyLocation::Index, None)?;
-
-    Ok(())
+    patch
 }
 
 pub fn add_to_gitignore(repo_path: &str, pattern: &str) -> Result<(), GitError> {

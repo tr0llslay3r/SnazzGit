@@ -9,6 +9,7 @@
 
   let { direction = 'vertical', initialSize = 300, minSize = 100, maxSize = 800, children }: Props = $props();
 
+  // svelte-ignore state_referenced_locally
   let size = $state(initialSize);
   let dragging = $state(false);
   let container: HTMLDivElement;
@@ -48,6 +49,7 @@
     : `grid-template-rows: 1fr 4px ${size}px`}
 >
   {@render children()}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="divider divider-{direction}"
     class:active={dragging}
