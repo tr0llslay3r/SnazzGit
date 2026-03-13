@@ -1,7 +1,7 @@
 <script lang="ts">
   import TreeView from '$lib/components/shared/TreeView.svelte';
   import { repoInfo, localBranches, remoteBranches, stashEntries, workingStatus, commits, refreshAll, refreshStatus, refreshStashes } from '$lib/stores/repo';
-  import { showBranchDialog, showStashDialog, selectedCommit, showStagingArea, selectedFile, addToast, jumpToCommitId, showCheckoutRemoteDialog, checkoutRemoteBranch, showTagDialog, tagTargetCommitId } from '$lib/stores/ui';
+  import { showBranchDialog, showStashDialog, selectedCommit, selectedFile, addToast, jumpToCommitId, showCheckoutRemoteDialog, checkoutRemoteBranch, showTagDialog, tagTargetCommitId, compareRefs, showReflog, showAddRemoteDialog } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
 
@@ -83,7 +83,8 @@
   function showWorkingCopy() {
     $selectedCommit = null;
     $selectedFile = null;
-    $showStagingArea = true;
+    $compareRefs = null;
+    $showReflog = false;
   }
 
   function onBranchContext(node: { label: string; data?: unknown }, e: MouseEvent) {
@@ -291,20 +292,7 @@
   }
 
   function addRemoteDialog() {
-    const name = prompt('Remote name:');
-    if (!name || !name.trim()) return;
-    const url = prompt('Remote URL:');
-    if (!url || !url.trim()) return;
-    doAddRemote(name.trim(), url.trim());
-  }
-
-  async function doAddRemote(name: string, url: string) {
-    if (!$repoInfo) return;
-    try {
-      await tauri.addRemote($repoInfo.path, name, url);
-      await refreshAll();
-      addToast(`Added remote "${name}"`, 'success');
-    } catch (err) { addToast(`Add remote failed: ${err}`, 'error'); }
+    $showAddRemoteDialog = true;
   }
 
   async function onBranchSelect(node: { label: string; data?: unknown }) {
@@ -334,7 +322,7 @@
   {#if $repoInfo}
     <button
       class="working-copy-btn"
-      class:active={!$selectedCommit && $showStagingArea}
+      class:active={!$selectedCommit}
       onclick={showWorkingCopy}
     >
       <span class="wc-icon">&#9998;</span>

@@ -28,31 +28,45 @@ impl RepoWatcher {
 
         let handle = app_handle.clone();
         std::thread::spawn(move || {
+            let mut pending = false;
             let mut last_emit = std::time::Instant::now();
             loop {
-                match rx.recv_timeout(Duration::from_millis(500)) {
+                match rx.recv_timeout(Duration::from_millis(200)) {
                     Ok(event) => {
                         // Skip .git internal changes that aren't relevant
-                        let only_git_internal = event.paths.iter().all(|p| {
+                        let dominated_by_git_noise = event.paths.iter().all(|p| {
                             let p_str = p.to_string_lossy();
+                            // Allow .git/refs, HEAD, index changes (branch/commit/stage ops)
                             if p_str.contains(".git/refs")
                                 || p_str.contains(".git/HEAD")
                                 || p_str.contains(".git/index")
                             {
-                                return false;
+                                return false; // not noise — allow these
                             }
-                            p_str.contains(".git/")
+                            p_str.contains(".git/") || p_str.contains(".git\\")
                         });
-                        if only_git_internal {
+                        if dominated_by_git_noise {
                             continue;
                         }
-                        if last_emit.elapsed() >= Duration::from_millis(500) {
+                        pending = true;
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        // Drain phase: if we have a pending change and enough time
+                        // has passed since last emit, fire now.
+                        if pending && last_emit.elapsed() >= Duration::from_millis(300) {
                             let _ = handle.emit("fs-changed", ());
                             last_emit = std::time::Instant::now();
+                            pending = false;
                         }
                     }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+
+                // Also emit immediately if pending and debounce window elapsed
+                if pending && last_emit.elapsed() >= Duration::from_millis(500) {
+                    let _ = handle.emit("fs-changed", ());
+                    last_emit = std::time::Instant::now();
+                    pending = false;
                 }
             }
         });

@@ -47,14 +47,53 @@
         false)
   );
 
+  function isUntracked(filePath: string): boolean {
+    return $workingStatus?.untracked.includes(filePath) ?? false;
+  }
+
   async function fetchDiff(repoPath: string, filePath: string, staged: boolean, id: number) {
     try {
       const result = await tauri.getWorkingDiff(repoPath, filePath, staged);
-      if (id === requestId) {
-        activeDiff = result;
-        loadError = null;
+      if (id !== requestId) return;
+
+      // If diff returned empty and file is untracked, read content directly as fallback
+      if (result && result.hunks.length === 0 && !staged && isUntracked(filePath)) {
+        console.warn('[DiffView] Empty diff for untracked file, reading content directly:', filePath);
+        try {
+          const base64Content = await tauri.readFileAtRef(repoPath, filePath);
+          if (id !== requestId) return;
+          if (base64Content) {
+            const text = atob(base64Content);
+            const lines = text.split('\n');
+            // Remove trailing empty line from split
+            if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+            if (lines.length > 0) {
+              const diffLines: DiffLine[] = lines.map((line, i) => ({
+                line_type: 'Addition' as const,
+                content: line,
+                old_lineno: null,
+                new_lineno: i + 1,
+                spans: [],
+              }));
+              result.hunks = [{
+                header: `@@ -0,0 +1,${lines.length} @@ New file`,
+                old_start: 0,
+                old_lines: 0,
+                new_start: 1,
+                new_lines: lines.length,
+                lines: diffLines,
+              }];
+            }
+          }
+        } catch (readErr) {
+          console.warn('[DiffView] Failed to read untracked file content:', readErr);
+        }
       }
+
+      activeDiff = result;
+      loadError = null;
     } catch (err) {
+      console.error('[DiffView] fetchDiff error for:', filePath, err);
       if (id === requestId) {
         activeDiff = null;
         loadError = String(err);
@@ -89,15 +128,17 @@
       return;
     }
 
-    if (isConflicted) {
+    // Read all reactive deps before any early returns to ensure proper tracking
+    const filePath = $selectedFile;
+    const repo = $repoInfo;
+    const staged = $selectedFileStaged;
+    const conflicted = isConflicted;
+
+    if (conflicted) {
       activeDiff = null;
       loadError = null;
       return;
     }
-
-    const filePath = $selectedFile;
-    const repo = $repoInfo;
-    const staged = $selectedFileStaged;
 
     if (!filePath || !repo) {
       activeDiff = null;
@@ -106,6 +147,8 @@
       newImageSrc = null;
       return;
     }
+
+    console.log('[DiffView] effect fired for:', filePath, 'staged:', staged, 'conflicted:', conflicted);
 
     const id = ++requestId;
     if (isImageFile(filePath)) {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { repoInfo, isLoading, refreshAll, refreshCommits, refreshStatus, refreshRepo, closeRepo, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
-  import { showSearch, showStagingArea, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, pendingCredentialRequest, addToast } from '$lib/stores/ui';
+  import { showSearch, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, compareRefs, pendingCredentialRequest, addToast } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -156,10 +156,6 @@
 
     <div class="toolbar-sep"></div>
     <div class="toolbar-group">
-      <button class="toolbar-btn" onclick={() => $showStagingArea = !$showStagingArea} class:active={$showStagingArea} title="Toggle staging area">
-        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" fill="currentColor"/><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zM1.5 8a6.5 6.5 0 1 1 13 0 6.5 6.5 0 0 1-13 0z" fill="currentColor"/></svg>
-        <span>Changes</span>
-      </button>
       <button class="toolbar-btn" onclick={() => $showReflog = !$showReflog} class:active={$showReflog} title="Reflog">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z" fill="currentColor"/><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
         <span>Reflog</span>

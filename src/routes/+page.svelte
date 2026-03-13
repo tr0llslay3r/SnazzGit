@@ -19,9 +19,10 @@
   import CredentialDialog from '$lib/components/shared/CredentialDialog.svelte';
   import CloneDialog from '$lib/components/shared/CloneDialog.svelte';
   import CompareDialog from '$lib/components/shared/CompareDialog.svelte';
+  import AddRemoteDialog from '$lib/components/shared/AddRemoteDialog.svelte';
   import CompareView from '$lib/components/diff/CompareView.svelte';
   import { repoInfo, commits, recentRepos, isLoading, refreshCommits, refreshStatus, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
-  import { selectedCommit, showStagingArea, showCloneDialog, addToast, fileHistoryPath, compareRefs, showReflog } from '$lib/stores/ui';
+  import { selectedCommit, showCloneDialog, addToast, fileHistoryPath, compareRefs, showReflog } from '$lib/stores/ui';
   import * as tauri from '$lib/utils/tauri';
 
   async function openRecent(path: string) {
@@ -212,7 +213,9 @@
                 <DiffView />
               </div>
             </div>
-          {:else if $showStagingArea && !$selectedCommit}
+          {:else if $selectedCommit}
+            <CommitDetail />
+          {:else}
             <div class="bottom-split">
               <div class="staging-col" style="width: {stagingWidth}px">
                 <StagingArea />
@@ -227,12 +230,6 @@
               <div class="diff-col">
                 <DiffView showHunkActions />
               </div>
-            </div>
-          {:else if $selectedCommit}
-            <CommitDetail />
-          {:else}
-            <div class="empty-bottom">
-              <p>Select a commit or toggle Changes view</p>
             </div>
           {/if}
         </div>
@@ -286,6 +283,7 @@
 <CredentialDialog />
 <CloneDialog />
 <CompareDialog />
+<AddRemoteDialog />
 
 <style>
   .app-shell {

@@ -57,7 +57,7 @@
       Comparing: <strong>{$compareRefs?.from}</strong> ... <strong>{$compareRefs?.to}</strong>
       ({diffFiles.length} file{diffFiles.length !== 1 ? 's' : ''} changed)
     </span>
-    <button class="close-btn" onclick={close} title="Close compare">&times;</button>
+    <button class="close-btn" onclick={close} title="Close compare (Esc)">Close</button>
   </div>
   <div class="compare-body">
     <div class="file-list">
@@ -114,11 +114,14 @@
     white-space: nowrap;
   }
   .close-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
     cursor: pointer;
-    font-size: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
     padding: 0 4px;
     line-height: 1;
   }

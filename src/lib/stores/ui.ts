@@ -27,6 +27,7 @@ export const fileHistoryPath = writable<string | null>(null);
 export const showCompareDialog = writable(false);
 export const compareRefs = writable<{ from: string; to: string } | null>(null);
 export const showReflog = writable(false);
+export const showAddRemoteDialog = writable(false);
 
 let toastId = 0;
 

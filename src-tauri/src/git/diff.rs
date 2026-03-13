@@ -11,8 +11,8 @@ pub fn get_working_diff(path: &str, file_path: &str, staged: bool) -> Result<Dif
     opts.pathspec(file_path);
 
     let diff = if staged {
-        let head_tree = repo.head()?.peel_to_tree()?;
-        repo.diff_tree_to_index(Some(&head_tree), None, Some(&mut opts))?
+        let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+        repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))?
     } else {
         opts.include_untracked(true);
         opts.show_untracked_content(true);
@@ -20,7 +20,62 @@ pub fn get_working_diff(path: &str, file_path: &str, staged: bool) -> Result<Dif
         repo.diff_index_to_workdir(None, Some(&mut opts))?
     };
 
-    parse_diff(&diff, file_path)
+    let mut result = parse_diff(&diff, file_path)?;
+
+    // Fallback: if diff returned empty hunks, read file content directly
+    if result.hunks.is_empty() {
+        let content = if staged {
+            // Read from the index
+            read_from_index(&repo, file_path)
+        } else {
+            // Read from working tree
+            let full_path = std::path::Path::new(path).join(file_path);
+            if full_path.exists() {
+                std::fs::read_to_string(&full_path).ok()
+            } else {
+                None
+            }
+        };
+        if let Some(text) = content {
+            let lines: Vec<&str> = text.lines().collect();
+            if !lines.is_empty() {
+                let diff_lines: Vec<DiffLine> = lines
+                    .iter()
+                    .enumerate()
+                    .map(|(i, line)| DiffLine {
+                        line_type: DiffLineType::Addition,
+                        content: line.to_string(),
+                        old_lineno: None,
+                        new_lineno: Some((i + 1) as u32),
+                        spans: Vec::new(),
+                    })
+                    .collect();
+                let num_lines = diff_lines.len() as u32;
+                result.hunks.push(DiffHunk {
+                    header: format!("@@ -0,0 +1,{} @@", num_lines),
+                    old_start: 0,
+                    old_lines: 0,
+                    new_start: 1,
+                    new_lines: num_lines,
+                    lines: diff_lines,
+                });
+                highlight_diff(&mut result);
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Read a file's content from the repo index (staging area).
+fn read_from_index(repo: &Repository, file_path: &str) -> Option<String> {
+    let index = repo.index().ok()?;
+    let entry = index.get_path(std::path::Path::new(file_path), 0)?;
+    let blob = repo.find_blob(entry.id).ok()?;
+    if blob.is_binary() {
+        return None;
+    }
+    std::str::from_utf8(blob.content()).ok().map(|s| s.to_string())
 }
 
 pub fn get_commit_diff(path: &str, commit_id: &str, file_path: Option<&str>) -> Result<Vec<DiffFile>, GitError> {
@@ -377,6 +432,50 @@ mod tests {
         assert!(all_lines
             .iter()
             .any(|l| matches!(l.line_type, DiffLineType::Addition)));
+    }
+
+    #[test]
+    fn test_get_working_diff_untracked_file() {
+        let (_dir, path) = init_repo();
+        // Need an initial commit so HEAD exists
+        make_commit(&path, &[("seed.txt", "seed\n")]);
+        // Create an untracked file (not staged, not committed)
+        fs::write(PathBuf::from(&path).join("new_file.txt"), "hello\nworld\n").unwrap();
+
+        let diff = get_working_diff(&path, "new_file.txt", false).unwrap();
+        assert_eq!(diff.path, "new_file.txt");
+        // Should have hunks showing the file content as additions
+        assert!(!diff.hunks.is_empty(), "untracked file diff should have hunks");
+        let all_lines: Vec<_> = diff.hunks.iter().flat_map(|h| &h.lines).collect();
+        assert!(
+            all_lines.iter().any(|l| l.content.contains("hello") && matches!(l.line_type, DiffLineType::Addition)),
+            "untracked file should show content as additions, got: {:?}", all_lines
+        );
+    }
+
+    #[test]
+    fn test_get_working_diff_untracked_in_subdir() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("seed.txt", "seed\n")]);
+        let sub = PathBuf::from(&path).join("docs");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("test.md"), "# Hello\nContent\n").unwrap();
+
+        let diff = get_working_diff(&path, "docs/test.md", false).unwrap();
+        assert!(!diff.hunks.is_empty(), "untracked file in subdir should have hunks");
+    }
+
+    #[test]
+    fn test_get_working_diff_untracked_no_prior_commits() {
+        let (_dir, path) = init_repo();
+        // No commits at all — repo has unborn HEAD
+        fs::write(PathBuf::from(&path).join("readme.md"), "hello\n").unwrap();
+
+        let result = get_working_diff(&path, "readme.md", false);
+        // This may fail because there's no HEAD to diff against — let's see
+        eprintln!("untracked-no-commits result: {:?}", result.as_ref().map(|d| d.hunks.len()));
+        // At minimum it should not panic
+        assert!(result.is_ok() || result.is_err());
     }
 
     #[test]

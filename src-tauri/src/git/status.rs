@@ -150,18 +150,19 @@ pub fn stage_hunk(
     old_lines: u32,
     new_start: u32,
     new_lines: u32,
-    header: &str,
+    _header: &str,
     lines: &[String],
 ) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
 
-    // Build a patch in unified diff format
+    // Build a patch in unified diff format — git2 requires the full diff header
     let mut patch = String::new();
+    patch.push_str(&format!("diff --git a/{} b/{}\n", file_path, file_path));
     patch.push_str(&format!("--- a/{}\n", file_path));
     patch.push_str(&format!("+++ b/{}\n", file_path));
     patch.push_str(&format!(
-        "@@ -{},{} +{},{} @@ {}\n",
-        old_start, old_lines, new_start, new_lines, header
+        "@@ -{},{} +{},{} @@\n",
+        old_start, old_lines, new_start, new_lines
     ));
     for line in lines {
         patch.push_str(line);
@@ -183,18 +184,19 @@ pub fn unstage_hunk(
     old_lines: u32,
     new_start: u32,
     new_lines: u32,
-    header: &str,
+    _header: &str,
     lines: &[String],
 ) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
 
     // Build a reverse patch to unstage: swap +/- and old/new
     let mut patch = String::new();
+    patch.push_str(&format!("diff --git a/{} b/{}\n", file_path, file_path));
     patch.push_str(&format!("--- a/{}\n", file_path));
     patch.push_str(&format!("+++ b/{}\n", file_path));
     patch.push_str(&format!(
-        "@@ -{},{} +{},{} @@ {}\n",
-        new_start, new_lines, old_start, old_lines, header
+        "@@ -{},{} +{},{} @@\n",
+        new_start, new_lines, old_start, old_lines
     ));
     for line in lines {
         // Reverse: + becomes -, - becomes +

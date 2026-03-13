@@ -1,6 +1,6 @@
 <script lang="ts">
   import { commits, graphRows, repoInfo, refreshAll } from '$lib/stores/repo';
-  import { selectedCommit, showBranchDialog, addToast, jumpToCommitId, showTagDialog, tagTargetCommitId } from '$lib/stores/ui';
+  import { selectedCommit, showBranchDialog, addToast, jumpToCommitId, showTagDialog, tagTargetCommitId, compareRefs, showReflog } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import CommitGraph from './CommitGraph.svelte';
   import * as tauri from '$lib/utils/tauri';
@@ -33,6 +33,9 @@
   });
 
   function selectCommit(commit: CommitInfo) {
+    // Exit compare/reflog modes when selecting a commit
+    $compareRefs = null;
+    $showReflog = false;
     if ($selectedCommit?.id === commit.id) {
       $selectedCommit = null;
     } else {

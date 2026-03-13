@@ -2,8 +2,8 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { loadSavedTheme } from '$lib/stores/theme';
-  import { showSearch, showBranchDialog, showStagingArea, showStashDialog, showTagDialog, showCompareDialog, selectedCommit, fileHistoryPath, compareRefs, addToast } from '$lib/stores/ui';
-  import { repoInfo, workingStatus, refreshCommits, refreshStatus, loadRecentRepos } from '$lib/stores/repo';
+  import { showSearch, showBranchDialog, showStashDialog, showTagDialog, showCompareDialog, selectedCommit, fileHistoryPath, compareRefs, addToast } from '$lib/stores/ui';
+  import { repoInfo, workingStatus, refreshCommits, refreshStatus, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
   import * as tauri from '$lib/utils/tauri';
   import SearchBar from '$lib/components/shared/SearchBar.svelte';
   import Toast from '$lib/components/shared/Toast.svelte';
@@ -23,6 +23,7 @@
         await tauri.addRecentRepo(info.path, info.name);
         await loadRecentRepos();
         await Promise.all([refreshCommits(), refreshStatus()]);
+        await setupWatcher(info.path);
       }
     } catch (e) {
       addToast(`Failed to open repository: ${e}`, 'error');
@@ -72,11 +73,6 @@
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'U') {
       e.preventDefault();
       unstageAllShortcut();
-    }
-    // Ctrl+T: toggle staging area
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 't') {
-      e.preventDefault();
-      $showStagingArea = !$showStagingArea;
     }
     // Ctrl+G: stash dialog
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'g') {
