@@ -1,8 +1,8 @@
 use crate::git::branch;
 
 #[tauri::command]
-pub async fn create_branch(path: String, name: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || branch::create_branch(&path, &name, true))
+pub async fn create_branch(path: String, name: String, commit_id: Option<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || branch::create_branch(&path, &name, commit_id.as_deref()))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -108,20 +108,20 @@ mod tests {
     #[tokio::test]
     async fn test_create_branch() {
         let (_dir, path) = init_repo_with_commit();
-        let result = create_branch(path, "feature".into()).await;
+        let result = create_branch(path, "feature".into(), None).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn test_create_branch_invalid_path() {
-        let result = create_branch("/nonexistent".into(), "feature".into()).await;
+        let result = create_branch("/nonexistent".into(), "feature".into(), None).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_checkout_branch() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(path.clone(), "dev".into()).await.unwrap();
+        create_branch(path.clone(), "dev".into(), None).await.unwrap();
         let result = checkout_branch(path, "dev".into()).await;
         assert!(result.is_ok());
     }
@@ -136,7 +136,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_branch() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(path.clone(), "to-delete".into()).await.unwrap();
+        create_branch(path.clone(), "to-delete".into(), None).await.unwrap();
         let result = delete_branch(path, "to-delete".into()).await;
         assert!(result.is_ok());
     }
@@ -144,7 +144,7 @@ mod tests {
     #[tokio::test]
     async fn test_rename_branch() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(path.clone(), "old-name".into()).await.unwrap();
+        create_branch(path.clone(), "old-name".into(), None).await.unwrap();
         let result = rename_branch(path, "old-name".into(), "new-name".into()).await;
         assert!(result.is_ok());
     }
@@ -178,7 +178,7 @@ mod tests {
     #[tokio::test]
     async fn test_merge_branch_already_up_to_date() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(path.clone(), "feature".into()).await.unwrap();
+        create_branch(path.clone(), "feature".into(), None).await.unwrap();
         let result = merge_branch(path, "feature".into()).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Already up to date");
@@ -249,7 +249,7 @@ mod tests {
     #[tokio::test]
     async fn test_force_delete_branch_command() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(path.clone(), "to-force-delete".into()).await.unwrap();
+        create_branch(path.clone(), "to-force-delete".into(), None).await.unwrap();
         let result = force_delete_branch(path, "to-force-delete".into()).await;
         assert!(result.is_ok());
     }

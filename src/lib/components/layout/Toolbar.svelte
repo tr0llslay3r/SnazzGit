@@ -110,6 +110,15 @@
     showContextMenu(e.clientX, e.clientY, items);
   }
 
+  async function openTerminalHere() {
+    if (!$repoInfo) return;
+    try {
+      await tauri.openTerminal($repoInfo.path);
+    } catch (e) {
+      addToast(`Failed to open terminal: ${e}`, 'error');
+    }
+  }
+
   async function doRefresh() {
     try {
       await refreshAll();
@@ -167,6 +176,10 @@
       <button class="toolbar-btn" onclick={doRefresh} disabled={$isLoading} title="Refresh">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z" fill="currentColor"/><path d="M8 1v4l3-2-3-2z" fill="currentColor"/></svg>
         <span>Refresh</span>
+      </button>
+      <button class="toolbar-btn" onclick={openTerminalHere} title="Open Terminal">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25zM7.25 8a.749.749 0 0 1-.22.53l-2.25 2.25a.749.749 0 1 1-1.06-1.06L5.44 8 3.72 6.28a.749.749 0 1 1 1.06-1.06l2.25 2.25c.141.14.22.331.22.53zm1.5 1.5h3a.75.75 0 0 1 0 1.5h-3a.75.75 0 0 1 0-1.5z" fill="currentColor"/></svg>
+        <span>Terminal</span>
       </button>
     </div>
   {/if}

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { commits, graphRows, repoInfo, refreshAll } from '$lib/stores/repo';
-  import { selectedCommit, showBranchDialog, addToast, jumpToCommitId, showTagDialog, tagTargetCommitId, compareRefs, showReflog } from '$lib/stores/ui';
+  import { selectedCommit, showBranchDialog, branchFromCommitId, addToast, jumpToCommitId, showTagDialog, tagTargetCommitId, compareRefs, showReflog, selectedStash } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import CommitGraph from './CommitGraph.svelte';
   import * as tauri from '$lib/utils/tauri';
@@ -33,9 +33,10 @@
   });
 
   function selectCommit(commit: CommitInfo) {
-    // Exit compare/reflog modes when selecting a commit
+    // Exit compare/reflog/stash modes when selecting a commit
     $compareRefs = null;
     $showReflog = false;
+    $selectedStash = null;
     if ($selectedCommit?.id === commit.id) {
       $selectedCommit = null;
     } else {
@@ -74,7 +75,7 @@
           }
         } catch (err) { addToast(`Cherry-pick failed: ${err}`, 'error'); }
       }},
-      { label: 'Create Branch Here', action: () => { $selectedCommit = commit; $showBranchDialog = true; } },
+      { label: 'Create Branch Here', action: () => { $branchFromCommitId = commit.id; $showBranchDialog = true; } },
       { label: 'Create Tag Here', action: () => { $tagTargetCommitId = commit.id; $showTagDialog = true; } },
       { label: 'Checkout (Detached)', action: async () => {
         if (!$repoInfo) return;
@@ -83,6 +84,17 @@
           await refreshAll();
           addToast(`Checked out ${commit.short_id}`, 'success');
         } catch (err) { addToast(`Checkout failed: ${err}`, 'error'); }
+      }},
+      { label: 'Undo Commit (soft reset)', action: async () => {
+        if (!$repoInfo || commit.parent_ids.length === 0) {
+          addToast('Cannot undo: no parent commit', 'warning');
+          return;
+        }
+        try {
+          await tauri.resetToCommit($repoInfo.path, commit.parent_ids[0], 'soft');
+          await refreshAll();
+          addToast(`Undone commit ${commit.short_id} (changes kept staged)`, 'success');
+        } catch (err) { addToast(`Undo failed: ${err}`, 'error'); }
       }},
       { label: 'Squash from here', action: async () => {
         if (!$repoInfo) return;

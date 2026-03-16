@@ -2,10 +2,15 @@ use git2::{BranchType, ResetType, Repository};
 
 use super::error::GitError;
 
-pub fn create_branch(path: &str, name: &str, from_head: bool) -> Result<(), GitError> {
+pub fn create_branch(path: &str, name: &str, commit_id: Option<&str>) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
-    let _ = from_head; // TODO: support creating branch from non-HEAD commit
-    let commit = repo.head()?.peel_to_commit()?;
+    let commit = if let Some(id) = commit_id {
+        let oid = git2::Oid::from_str(id)
+            .map_err(|e| GitError::General(format!("Invalid commit ID: {}", e)))?;
+        repo.find_commit(oid)?
+    } else {
+        repo.head()?.peel_to_commit()?
+    };
     repo.branch(name, &commit, false)?;
     Ok(())
 }
@@ -146,7 +151,7 @@ mod tests {
     #[test]
     fn test_create_branch() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(&path, "feature", true).unwrap();
+        create_branch(&path, "feature", None).unwrap();
         let repo = git2::Repository::open(&path).unwrap();
         assert!(repo.find_branch("feature", git2::BranchType::Local).is_ok());
     }
@@ -154,14 +159,14 @@ mod tests {
     #[test]
     fn test_create_branch_duplicate_fails() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(&path, "dup", true).unwrap();
-        assert!(create_branch(&path, "dup", true).is_err());
+        create_branch(&path, "dup", None).unwrap();
+        assert!(create_branch(&path, "dup", None).is_err());
     }
 
     #[test]
     fn test_checkout_branch() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(&path, "feature", true).unwrap();
+        create_branch(&path, "feature", None).unwrap();
         checkout_branch(&path, "feature").unwrap();
         let repo = git2::Repository::open(&path).unwrap();
         let head = repo.head().unwrap();
@@ -172,7 +177,7 @@ mod tests {
     fn test_delete_branch() {
         let (_dir, path) = init_repo_with_commit();
         // Create the branch while still on the default branch so it is not HEAD
-        create_branch(&path, "to-delete", true).unwrap();
+        create_branch(&path, "to-delete", None).unwrap();
         delete_branch(&path, "to-delete").unwrap();
         let repo = git2::Repository::open(&path).unwrap();
         assert!(repo.find_branch("to-delete", git2::BranchType::Local).is_err());
@@ -181,7 +186,7 @@ mod tests {
     #[test]
     fn test_rename_branch() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(&path, "old-name", true).unwrap();
+        create_branch(&path, "old-name", None).unwrap();
         rename_branch(&path, "old-name", "new-name").unwrap();
         let repo = git2::Repository::open(&path).unwrap();
         assert!(repo.find_branch("new-name", git2::BranchType::Local).is_ok());
@@ -352,7 +357,7 @@ mod tests {
     #[test]
     fn test_merge_branch_already_up_to_date() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(&path, "feature", true).unwrap();
+        create_branch(&path, "feature", None).unwrap();
         let result = merge_branch(&path, "feature").unwrap();
         assert_eq!(result, "Already up to date");
     }
@@ -361,7 +366,7 @@ mod tests {
     fn test_merge_branch_fast_forward() {
         let (_dir, path) = init_repo_with_commit();
         let main_branch = current_branch(&path);
-        create_branch(&path, "feature", true).unwrap();
+        create_branch(&path, "feature", None).unwrap();
         checkout_branch(&path, "feature").unwrap();
         add_commit(&path, "commit on feature");
         checkout_branch(&path, &main_branch).unwrap();
@@ -373,7 +378,7 @@ mod tests {
     fn test_merge_branch_diverged_no_conflicts() {
         let (_dir, path) = init_repo_with_commit();
         let main_branch = current_branch(&path);
-        create_branch(&path, "feature", true).unwrap();
+        create_branch(&path, "feature", None).unwrap();
         add_commit(&path, "main commit");
         checkout_branch(&path, "feature").unwrap();
         add_commit(&path, "feature commit");
@@ -392,7 +397,7 @@ mod tests {
     #[test]
     fn test_force_delete_branch() {
         let (_dir, path) = init_repo_with_commit();
-        create_branch(&path, "unmerged", true).unwrap();
+        create_branch(&path, "unmerged", None).unwrap();
         // Force delete should succeed even if branch is unmerged
         force_delete_branch(&path, "unmerged").unwrap();
         let repo = git2::Repository::open(&path).unwrap();

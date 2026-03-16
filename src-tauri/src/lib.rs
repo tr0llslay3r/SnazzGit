@@ -5,7 +5,7 @@ mod theme;
 
 use commands::{
     blame, branches, clone, commits, conflict, credentials, diff, rebase, reflog,
-    recent as recent_cmd, remotes, repo, search, stash, status, tags, theme as theme_cmd,
+    recent as recent_cmd, remotes, repo, search, shell, stash, status, tags, theme as theme_cmd,
     watcher as watcher_cmd,
 };
 
@@ -85,6 +85,7 @@ pub fn run() {
             stash::stash_save,
             stash::stash_pop,
             stash::stash_apply,
+            stash::stash_diff,
             stash::stash_drop,
             // Blame
             blame::get_blame,
@@ -108,6 +109,10 @@ pub fn run() {
             rebase::rebase_abort,
             rebase::rebase_continue,
             rebase::squash_commits,
+            // Shell / OS integration
+            shell::open_in_file_manager,
+            shell::open_in_default_app,
+            shell::open_terminal,
             // File watcher
             watcher_cmd::start_watching,
             watcher_cmd::stop_watching,

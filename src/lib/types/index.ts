@@ -16,6 +16,8 @@ export interface BranchInfo {
   is_remote: boolean;
   upstream: string | null;
   commit_id: string;
+  ahead: number | null;
+  behind: number | null;
 }
 
 export interface CommitInfo {

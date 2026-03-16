@@ -39,8 +39,8 @@ export const createCommit = (path: string, message: string, amend: boolean) =>
   invoke<string>('create_commit', { path, message, amend });
 
 // Branches
-export const createBranch = (path: string, name: string) =>
-  invoke<void>('create_branch', { path, name });
+export const createBranch = (path: string, name: string, commitId?: string) =>
+  invoke<void>('create_branch', { path, name, commitId: commitId ?? null });
 
 export const checkoutBranch = (path: string, name: string) =>
   invoke<void>('checkout_branch', { path, name });
@@ -154,6 +154,9 @@ export const stashPop = (path: string, index: number) =>
 export const stashApply = (path: string, index: number) =>
   invoke<void>('stash_apply', { path, index });
 
+export const stashDiff = (path: string, stashCommitId: string) =>
+  invoke<DiffFile[]>('stash_diff', { path, stashCommitId });
+
 export const stashDrop = (path: string, index: number) =>
   invoke<void>('stash_drop', { path, index });
 
@@ -238,6 +241,16 @@ export const renameRemote = (path: string, oldName: string, newName: string) =>
 // Set upstream
 export const setUpstream = (path: string, branchName: string, upstream?: string) =>
   invoke<void>('set_upstream', { path, branchName, upstream: upstream ?? null });
+
+// Shell / OS integration
+export const openInFileManager = (path: string) =>
+  invoke<void>('open_in_file_manager', { path });
+
+export const openInDefaultApp = (path: string) =>
+  invoke<void>('open_in_default_app', { path });
+
+export const openTerminal = (path: string) =>
+  invoke<void>('open_terminal', { path });
 
 // File watcher
 export const startWatching = (path: string) =>

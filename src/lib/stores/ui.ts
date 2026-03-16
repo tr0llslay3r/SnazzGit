@@ -13,6 +13,7 @@ export const searchQuery = writable('');
 export const toasts = writable<Toast[]>([]);
 export const showThemePicker = writable(false);
 export const showBranchDialog = writable(false);
+export const branchFromCommitId = writable<string | null>(null);
 export const showStashDialog = writable(false);
 export const showMergeDialog = writable(false);
 export const jumpToCommitId = writable<string | null>(null);
@@ -28,6 +29,7 @@ export const showCompareDialog = writable(false);
 export const compareRefs = writable<{ from: string; to: string } | null>(null);
 export const showReflog = writable(false);
 export const showAddRemoteDialog = writable(false);
+export const selectedStash = writable<{ index: number; message: string; commit_id: string } | null>(null);
 
 let toastId = 0;
 

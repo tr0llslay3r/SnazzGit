@@ -34,5 +34,6 @@ chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 tauri-plugin-window-state = "2"
 base64 = "0.22.1"
+opener = "0.7"
 [dev-dependencies]
 tempfile = "3"

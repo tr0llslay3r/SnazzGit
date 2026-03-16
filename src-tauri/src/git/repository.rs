@@ -70,12 +70,29 @@ fn get_branches(repo: &Repository) -> Result<Vec<BranchInfo>, GitError> {
             .map(|oid| oid.to_string())
             .unwrap_or_default();
 
+        let (ahead, behind) = if !is_remote {
+            if let (Some(local_oid), Some(ref up_name)) = (branch.get().target(), &upstream) {
+                repo.find_branch(up_name, git2::BranchType::Remote)
+                    .ok()
+                    .and_then(|up_branch| up_branch.get().target())
+                    .and_then(|remote_oid| repo.graph_ahead_behind(local_oid, remote_oid).ok())
+                    .map(|(a, b)| (Some(a as u32), Some(b as u32)))
+                    .unwrap_or((None, None))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
         branches.push(BranchInfo {
             name,
             is_head,
             is_remote,
             upstream,
             commit_id,
+            ahead,
+            behind,
         });
     }
     Ok(branches)

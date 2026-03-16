@@ -1,5 +1,5 @@
 use crate::git::stash;
-use crate::git::types::StashEntry;
+use crate::git::types::{DiffFile, StashEntry};
 
 #[tauri::command]
 pub async fn stash_list(path: String) -> Result<Vec<StashEntry>, String> {
@@ -34,6 +34,14 @@ pub async fn stash_pop(path: String, index: usize) -> Result<(), String> {
 #[tauri::command]
 pub async fn stash_apply(path: String, index: usize) -> Result<(), String> {
     tokio::task::spawn_blocking(move || stash::stash_apply(&path, index))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn stash_diff(path: String, stash_commit_id: String) -> Result<Vec<DiffFile>, String> {
+    tokio::task::spawn_blocking(move || stash::stash_diff(&path, &stash_commit_id))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())

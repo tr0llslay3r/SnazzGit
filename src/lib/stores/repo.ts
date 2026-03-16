@@ -68,6 +68,7 @@ export async function loadRecentRepos() {
 
 export function closeRepo() {
   teardownWatcher();
+  stopAutoFetch();
   repoInfo.set(null);
   commits.set([]);
   graphRows.set([]);
@@ -87,6 +88,7 @@ export async function setupWatcher(path: string) {
       } catch { /* ignore errors during auto-refresh */ }
     });
   } catch { /* watcher is optional */ }
+  startAutoFetch();
 }
 
 export async function teardownWatcher() {
@@ -97,6 +99,32 @@ export async function teardownWatcher() {
   try {
     await tauri.stopWatching();
   } catch { /* ignore */ }
+}
+
+// Auto-fetch interval (5 minutes)
+let autoFetchInterval: ReturnType<typeof setInterval> | null = null;
+const AUTO_FETCH_MS = 5 * 60 * 1000;
+
+export function startAutoFetch() {
+  stopAutoFetch();
+  autoFetchInterval = setInterval(async () => {
+    const repo = get(repoInfo);
+    if (!repo || repo.remotes.length === 0) return;
+    try {
+      await tauri.fetchRemote(repo.path, repo.remotes[0]);
+      // Silently refresh repo info to update ahead/behind counts
+      repoInfo.set(await tauri.openRepository(repo.path));
+    } catch {
+      // Silently ignore auto-fetch failures
+    }
+  }, AUTO_FETCH_MS);
+}
+
+export function stopAutoFetch() {
+  if (autoFetchInterval) {
+    clearInterval(autoFetchInterval);
+    autoFetchInterval = null;
+  }
 }
 
 export const hasChanges = derived(workingStatus, ($status) => {
