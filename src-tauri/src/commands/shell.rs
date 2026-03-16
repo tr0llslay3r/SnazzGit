@@ -60,3 +60,44 @@ pub async fn open_terminal(path: String) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_open_terminal_no_emulators_in_ci() {
+        // In a headless CI/test environment, no terminal emulators should be found,
+        // so open_terminal returns an error.
+        let dir = tempfile::TempDir::new().unwrap();
+        let result = open_terminal(dir.path().to_str().unwrap().into()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No terminal emulator found"));
+    }
+
+    #[tokio::test]
+    async fn test_open_in_file_manager_resolves_file_to_parent() {
+        // Create a temp file and verify the function runs without panic.
+        // opener::open fires xdg-open asynchronously, so it may return Ok
+        // even in headless environments. We verify it doesn't panic.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("test.txt");
+        std::fs::write(&file_path, "test").unwrap();
+        let _ = open_in_file_manager(file_path.to_str().unwrap().into()).await;
+    }
+
+    #[tokio::test]
+    async fn test_open_in_file_manager_directory_path() {
+        // When given a directory, it should pass the directory directly to opener.
+        let dir = tempfile::TempDir::new().unwrap();
+        let _ = open_in_file_manager(dir.path().to_str().unwrap().into()).await;
+    }
+
+    #[tokio::test]
+    async fn test_open_in_default_app_runs_without_panic() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("test.txt");
+        std::fs::write(&file_path, "test").unwrap();
+        let _ = open_in_default_app(file_path.to_str().unwrap().into()).await;
+    }
+}

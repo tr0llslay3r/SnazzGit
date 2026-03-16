@@ -143,4 +143,22 @@ mod tests {
         let result = stash_save("/nonexistent".into(), "msg".into(), None).await;
         assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn test_stash_diff_shows_changes() {
+        let (_dir, path) = init_repo_dirty();
+        stash_save(path.clone(), "diff stash".into(), None).await.unwrap();
+        let list = stash_list(path.clone()).await.unwrap();
+        let commit_id = list[0].commit_id.clone();
+        let files = stash_diff(path, commit_id).await.unwrap();
+        assert!(!files.is_empty());
+        assert_eq!(files[0].path, "file.txt");
+    }
+
+    #[tokio::test]
+    async fn test_stash_diff_invalid_commit_id() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = stash_diff(path, "invalid-oid".into()).await;
+        assert!(result.is_err());
+    }
 }

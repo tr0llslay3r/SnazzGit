@@ -1,4 +1,4 @@
-use git2::{DiffOptions, Repository};
+use git2::Repository;
 
 use super::error::GitError;
 use super::diff::highlight_diff;
@@ -274,5 +274,38 @@ mod tests {
         let list = stash_list(&path).unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].message.contains("WIP"));
+    }
+
+    #[test]
+    fn test_stash_diff_shows_changes() {
+        let (_dir, path) = init_repo_with_commit();
+        stage_new_file(&path, "diffme.txt", "hello world");
+        stash_save(&path, "diff test", false).unwrap();
+        let list = stash_list(&path).unwrap();
+        let commit_id = &list[0].commit_id;
+        let files = stash_diff(&path, commit_id).unwrap();
+        assert!(!files.is_empty());
+        assert_eq!(files[0].path, "diffme.txt");
+        assert!(!files[0].hunks.is_empty());
+        // Should have at least one addition line
+        let has_addition = files[0].hunks[0]
+            .lines
+            .iter()
+            .any(|l| matches!(l.line_type, DiffLineType::Addition));
+        assert!(has_addition);
+    }
+
+    #[test]
+    fn test_stash_diff_invalid_commit_id_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = stash_diff(&path, "not-a-valid-oid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stash_diff_nonexistent_commit_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = stash_diff(&path, "0000000000000000000000000000000000000000");
+        assert!(result.is_err());
     }
 }
