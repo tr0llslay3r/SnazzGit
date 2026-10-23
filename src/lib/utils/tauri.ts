@@ -96,6 +96,12 @@ export const diffRefs = (path: string, fromRef: string, toRef: string) =>
 export const readFileAtRef = (path: string, filePath: string, gitRef?: string) =>
   invoke<string | null>('read_file_at_ref', { path, filePath, gitRef: gitRef ?? null });
 
+export const exportCommitAsPatch = (path: string, commitId: string, destPath: string) =>
+  invoke<void>('export_commit_as_patch', { path, commitId, destPath });
+
+export const applyPatchFile = (path: string, patchPath: string) =>
+  invoke<void>('apply_patch_file', { path, patchPath });
+
 // Status
 export const getStatus = (path: string) =>
   invoke<WorkingTreeStatus>('get_status', { path });

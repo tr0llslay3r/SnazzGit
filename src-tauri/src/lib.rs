@@ -65,6 +65,8 @@ pub fn run() {
             diff::get_commit_diff,
             diff::diff_refs,
             diff::read_file_at_ref,
+            diff::export_commit_as_patch,
+            diff::apply_patch_file,
             // Conflict resolution
             conflict::get_conflict_diff,
             conflict::resolve_conflict_ours_theirs,

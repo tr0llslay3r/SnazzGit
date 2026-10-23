@@ -135,6 +135,22 @@
       addToast(`Failed to refresh: ${e}`, 'error');
     }
   }
+
+  async function applyPatch() {
+    if (!$repoInfo) return;
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Patch files', extensions: ['patch', 'diff'] }],
+      });
+      if (!selected) return;
+      await tauri.applyPatchFile($repoInfo.path, selected as string);
+      await refreshAll();
+      addToast('Patch applied', 'success');
+    } catch (e) {
+      addToast(`Apply patch failed: ${e}`, 'error');
+    }
+  }
 </script>
 
 <nav class="toolbar">
@@ -197,6 +213,10 @@
       <button class="toolbar-btn" onclick={() => $showConfigDialog = true} title="Repository Config">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12.94 7a4.993 4.993 0 0 0-.26-.86l1.1-1.1-1.41-1.41-1.1 1.1a4.993 4.993 0 0 0-.86-.26L10 2.5H8l-.4 1.47a4.993 4.993 0 0 0-.86.26l-1.1-1.1-1.41 1.41 1.1 1.1c-.11.27-.2.56-.26.86L3.5 7.4v1.2l1.47.4c.06.3.15.59.26.86l-1.1 1.1 1.41 1.41 1.1-1.1c.27.11.56.2.86.26L8 13.5h2l.4-1.47c.3-.06.59-.15.86-.26l1.1 1.1 1.41-1.41-1.1-1.1c.11-.27.2-.56.26-.86l1.47-.4V7.4l-1.47-.4z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"/></svg>
         <span>Config</span>
+      </button>
+      <button class="toolbar-btn" onclick={applyPatch} title="Apply a patch file">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M3.75 1.5a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 8 4.25V1.5H3.75zM9.5 1.5v2.75c0 .138.112.25.25.25h2.75L9.5 1.5zM2 1.75C2 .784 2.784 0 3.75 0h5.086c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 11.75 16h-8A1.75 1.75 0 0 1 2 14.25V1.75z" fill="currentColor"/><path d="M8 7.5a.5.5 0 0 1 .5.5v1.5H10a.5.5 0 0 1 0 1H8.5V12a.5.5 0 0 1-1 0v-1.5H6a.5.5 0 0 1 0-1h1.5V8a.5.5 0 0 1 .5-.5z" fill="currentColor"/></svg>
+        <span>Apply Patch</span>
       </button>
     </div>
   {/if}

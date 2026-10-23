@@ -5,6 +5,7 @@
   import CommitGraph from './CommitGraph.svelte';
   import * as tauri from '$lib/utils/tauri';
   import type { CommitInfo, RefInfo } from '$lib/types';
+  import { save } from '@tauri-apps/plugin-dialog';
 
   let container: HTMLDivElement;
   let scrollTop = $state(0);
@@ -55,6 +56,30 @@
     return date.toLocaleDateString();
   }
 
+  function patchFilename(commit: CommitInfo): string {
+    const slug = commit.summary
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 50) || 'patch';
+    return `0001-${slug}.patch`;
+  }
+
+  async function exportAsPatch(commit: CommitInfo) {
+    if (!$repoInfo) return;
+    try {
+      const dest = await save({
+        defaultPath: patchFilename(commit),
+        filters: [{ name: 'Patch files', extensions: ['patch'] }],
+      });
+      if (!dest) return;
+      await tauri.exportCommitAsPatch($repoInfo.path, commit.id, dest);
+      addToast(`Exported ${commit.short_id} as patch`, 'success');
+    } catch (err) {
+      addToast(`Export failed: ${err}`, 'error');
+    }
+  }
+
   function onCommitContext(e: MouseEvent, commit: CommitInfo) {
     e.preventDefault();
     e.stopPropagation();
@@ -77,6 +102,7 @@
       }},
       { label: 'Create Branch Here', action: () => { $branchFromCommitId = commit.id; $showBranchDialog = true; } },
       { label: 'Create Tag Here', action: () => { $tagTargetCommitId = commit.id; $showTagDialog = true; } },
+      { label: 'Export as Patch...', action: () => exportAsPatch(commit) },
       { label: 'Checkout (Detached)', action: async () => {
         if (!$repoInfo) return;
         try {
