@@ -187,6 +187,12 @@ pub struct HunkApplyParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigEntry {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConflictFile {
     pub path: String,
     pub hunks: Vec<ConflictHunk>,

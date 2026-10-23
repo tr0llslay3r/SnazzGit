@@ -2,6 +2,7 @@ pub mod blame;
 pub mod branch;
 pub mod clone;
 pub mod commit;
+pub mod config;
 pub mod conflict;
 pub mod credentials;
 pub mod diff;

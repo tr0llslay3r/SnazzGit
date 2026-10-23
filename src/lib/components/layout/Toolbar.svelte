@@ -1,6 +1,6 @@
 <script lang="ts">
   import { repoInfo, isLoading, refreshAll, refreshCommits, refreshStatus, refreshRepo, closeRepo, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
-  import { showSearch, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, compareRefs, pendingCredentialRequest, addToast, showRemoteBranchesInGraph } from '$lib/stores/ui';
+  import { showSearch, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, compareRefs, pendingCredentialRequest, addToast, showRemoteBranchesInGraph, showConfigDialog } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -193,6 +193,10 @@
       <button class="toolbar-btn" onclick={toggleRemoteBranchesInGraph} class:active={$showRemoteBranchesInGraph} title="Show remote branches in the commit graph">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" fill="currentColor"/></svg>
         <span>Remote Branches</span>
+      </button>
+      <button class="toolbar-btn" onclick={() => $showConfigDialog = true} title="Repository Config">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM12.94 7a4.993 4.993 0 0 0-.26-.86l1.1-1.1-1.41-1.41-1.1 1.1a4.993 4.993 0 0 0-.86-.26L10 2.5H8l-.4 1.47a4.993 4.993 0 0 0-.86.26l-1.1-1.1-1.41 1.41 1.1 1.1c-.11.27-.2.56-.26.86L3.5 7.4v1.2l1.47.4c.06.3.15.59.26.86l-1.1 1.1 1.41 1.41 1.1-1.1c.27.11.56.2.86.26L8 13.5h2l.4-1.47c.3-.06.59-.15.86-.26l1.1 1.1 1.41-1.41-1.1-1.1c.11-.27.2-.56.26-.86l1.47-.4V7.4l-1.47-.4z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"/></svg>
+        <span>Config</span>
       </button>
     </div>
   {/if}

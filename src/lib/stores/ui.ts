@@ -31,6 +31,7 @@ export const showReflog = writable(false);
 export const showAddRemoteDialog = writable(false);
 export const selectedStash = writable<{ index: number; message: string; commit_id: string } | null>(null);
 export const showRemoteBranchesInGraph = writable(false);
+export const showConfigDialog = writable(false);
 
 let toastId = 0;
 

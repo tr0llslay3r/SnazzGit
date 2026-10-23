@@ -20,6 +20,7 @@
   import CloneDialog from '$lib/components/shared/CloneDialog.svelte';
   import CompareDialog from '$lib/components/shared/CompareDialog.svelte';
   import AddRemoteDialog from '$lib/components/shared/AddRemoteDialog.svelte';
+  import ConfigDialog from '$lib/components/shared/ConfigDialog.svelte';
   import CompareView from '$lib/components/diff/CompareView.svelte';
   import StashPreview from '$lib/components/commit/StashPreview.svelte';
   import { repoInfo, commits, recentRepos, isLoading, refreshCommits, refreshStatus, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
@@ -287,6 +288,7 @@
 <CloneDialog />
 <CompareDialog />
 <AddRemoteDialog />
+<ConfigDialog />
 
 <style>
   .app-shell {

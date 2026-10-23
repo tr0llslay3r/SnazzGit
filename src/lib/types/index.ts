@@ -98,6 +98,11 @@ export interface StashEntry {
   commit_id: string;
 }
 
+export interface ConfigEntry {
+  name: string;
+  value: string;
+}
+
 export interface BlameInfo {
   lines: BlameLine[];
 }

@@ -12,6 +12,7 @@ import type {
   ConflictFile,
   Credentials,
   ReflogEntry,
+  ConfigEntry,
 } from '$lib/types';
 
 // CLI
@@ -202,6 +203,16 @@ export const createTag = (path: string, name: string, commitId: string, message?
 
 export const deleteTag = (path: string, name: string) =>
   invoke<void>('delete_tag', { path, name });
+
+// Config
+export const getConfigEntries = (path: string) =>
+  invoke<ConfigEntry[]>('get_config_entries', { path });
+
+export const setConfigEntry = (path: string, key: string, value: string) =>
+  invoke<void>('set_config_entry', { path, key, value });
+
+export const deleteConfigEntry = (path: string, key: string) =>
+  invoke<void>('delete_config_entry', { path, key });
 
 // Reflog
 export const getReflog = (path: string, limit: number) =>
