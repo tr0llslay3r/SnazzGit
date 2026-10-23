@@ -164,6 +164,43 @@ mod tests {
     }
 
     #[test]
+    fn test_create_branch_from_specific_commit() {
+        let (_dir, path) = init_repo_with_commit();
+        let first_oid = {
+            let repo = git2::Repository::open(&path).unwrap();
+            let oid = repo.head().unwrap().target().unwrap();
+            oid
+        };
+        add_commit(&path, "Second commit");
+
+        create_branch(&path, "from-first", Some(&first_oid.to_string())).unwrap();
+
+        let repo = git2::Repository::open(&path).unwrap();
+        let branch = repo.find_branch("from-first", git2::BranchType::Local).unwrap();
+        assert_eq!(branch.get().target().unwrap(), first_oid);
+        // HEAD stayed on the current branch, pointing at the second commit
+        assert_ne!(repo.head().unwrap().target().unwrap(), first_oid);
+    }
+
+    #[test]
+    fn test_create_branch_from_invalid_commit_id_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = create_branch(&path, "bad", Some("not-a-valid-oid"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_create_branch_from_nonexistent_commit_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = create_branch(
+            &path,
+            "bad",
+            Some("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_checkout_branch() {
         let (_dir, path) = init_repo_with_commit();
         create_branch(&path, "feature", None).unwrap();

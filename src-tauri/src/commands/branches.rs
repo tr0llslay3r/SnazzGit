@@ -119,6 +119,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_branch_from_commit_id_is_passed_through() {
+        let (_dir, path) = init_repo_with_commit();
+        let first_oid = {
+            let repo = git2::Repository::open(&path).unwrap();
+            let oid = repo.head().unwrap().target().unwrap();
+            oid
+        };
+        // Add a second commit so HEAD and the target commit diverge.
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+            let parent = repo.head().unwrap().peel_to_commit().unwrap();
+            let tree_id = repo.index().unwrap().write_tree().unwrap();
+            let tree = repo.find_tree(tree_id).unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "Second", &tree, &[&parent])
+                .unwrap();
+        }
+
+        let result = create_branch(
+            path.clone(),
+            "from-first".into(),
+            Some(first_oid.to_string()),
+        )
+        .await;
+        assert!(result.is_ok());
+
+        let repo = git2::Repository::open(&path).unwrap();
+        let branch = repo.find_branch("from-first", git2::BranchType::Local).unwrap();
+        assert_eq!(branch.get().target().unwrap(), first_oid);
+    }
+
+    #[tokio::test]
     async fn test_checkout_branch() {
         let (_dir, path) = init_repo_with_commit();
         create_branch(path.clone(), "dev".into(), None).await.unwrap();
