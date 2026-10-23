@@ -16,6 +16,24 @@ pub async fn open_in_default_app(path: String) -> Result<(), String> {
     opener::open(Path::new(&path)).map_err(|e| e.to_string())
 }
 
+/// Try each `(command, args)` candidate in order, returning as soon as one
+/// spawns successfully. Extracted from `open_terminal` so tests can supply
+/// command names that are guaranteed not to exist, instead of depending on
+/// which terminal emulators happen to be installed wherever this runs.
+#[cfg(target_os = "linux")]
+fn try_spawn_terminal(candidates: &[(&str, &[&str])], path: &str) -> Result<(), String> {
+    for (term, args) in candidates {
+        let result = std::process::Command::new(term)
+            .args(*args)
+            .current_dir(path)
+            .spawn();
+        if result.is_ok() {
+            return Ok(());
+        }
+    }
+    Err("No terminal emulator found".to_string())
+}
+
 #[tauri::command]
 pub async fn open_terminal(path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
@@ -29,16 +47,7 @@ pub async fn open_terminal(path: String) -> Result<(), String> {
                 ("xfce4-terminal", &["--working-directory", &path][..]),
                 ("xterm", &["-e", "bash"][..]),
             ];
-            for (term, args) in &terminals {
-                let result = std::process::Command::new(term)
-                    .args(*args)
-                    .current_dir(&path)
-                    .spawn();
-                if result.is_ok() {
-                    return Ok(());
-                }
-            }
-            Err("No terminal emulator found".to_string())
+            try_spawn_terminal(&terminals, &path)
         }
         #[cfg(target_os = "macos")]
         {
@@ -65,12 +74,19 @@ pub async fn open_terminal(path: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_open_terminal_no_emulators_in_ci() {
-        // In a headless CI/test environment, no terminal emulators should be found,
-        // so open_terminal returns an error.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_try_spawn_terminal_errors_when_none_found() {
+        // Command names that cannot possibly exist, so this doesn't depend on
+        // which terminal emulators (if any) happen to be installed wherever
+        // this test runs — unlike the real `terminals` list in open_terminal,
+        // which a CI runner image can start shipping one of at any time.
+        let fake_terminals: &[(&str, &[&str])] = &[
+            ("snazzgit-test-nonexistent-terminal-abc123", &[]),
+            ("snazzgit-test-nonexistent-terminal-def456", &[]),
+        ];
         let dir = tempfile::TempDir::new().unwrap();
-        let result = open_terminal(dir.path().to_str().unwrap().into()).await;
+        let result = try_spawn_terminal(fake_terminals, dir.path().to_str().unwrap());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("No terminal emulator found"));
     }
