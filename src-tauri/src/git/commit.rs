@@ -8,6 +8,7 @@ pub fn load_commits(
     path: &str,
     limit: usize,
     offset: usize,
+    include_remote: bool,
 ) -> Result<Vec<CommitInfo>, GitError> {
     let repo = Repository::open(path)?;
     let ref_map = build_ref_map(&repo)?;
@@ -24,6 +25,19 @@ pub fn load_commits(
         for (branch, _) in branches.flatten() {
             if let Some(oid) = branch.get().target() {
                 let _ = revwalk.push(oid);
+            }
+        }
+    }
+
+    // Optionally push remote-tracking branch tips too, so commits that only
+    // exist upstream (not yet merged/fetched into a local branch) show up in
+    // the graph, same as Fork/GitKraken's "show remote branches" toggle.
+    if include_remote {
+        if let Ok(branches) = repo.branches(Some(git2::BranchType::Remote)) {
+            for (branch, _) in branches.flatten() {
+                if let Some(oid) = branch.get().target() {
+                    let _ = revwalk.push(oid);
+                }
             }
         }
     }
@@ -276,7 +290,7 @@ mod tests {
     #[test]
     fn test_load_commits_empty_repo() {
         let (_dir, path) = init_empty_repo();
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         assert!(commits.is_empty());
     }
 
@@ -284,7 +298,7 @@ mod tests {
     fn test_load_commits_single() {
         let (_dir, path) = init_empty_repo();
         make_commit_msg(&path, "First commit");
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].summary, "First commit");
         assert_eq!(commits[0].author_name, "Test User");
@@ -297,7 +311,7 @@ mod tests {
         make_commit_msg(&path, "First");
         make_commit_msg(&path, "Second");
         make_commit_msg(&path, "Third");
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         assert_eq!(commits.len(), 3);
         assert_eq!(commits[0].summary, "Third");
         assert_eq!(commits[2].summary, "First");
@@ -309,7 +323,7 @@ mod tests {
         make_commit_msg(&path, "A");
         make_commit_msg(&path, "B");
         make_commit_msg(&path, "C");
-        let commits = load_commits(&path, 2, 0).unwrap();
+        let commits = load_commits(&path, 2, 0, false).unwrap();
         assert_eq!(commits.len(), 2);
     }
 
@@ -319,7 +333,7 @@ mod tests {
         make_commit_msg(&path, "A");
         make_commit_msg(&path, "B");
         make_commit_msg(&path, "C");
-        let commits = load_commits(&path, 100, 1).unwrap();
+        let commits = load_commits(&path, 100, 1, false).unwrap();
         assert_eq!(commits.len(), 2);
         assert_eq!(commits[0].summary, "B");
     }
@@ -328,7 +342,7 @@ mod tests {
     fn test_load_commits_short_id_is_8_chars() {
         let (_dir, path) = init_empty_repo();
         make_commit_msg(&path, "Short id test");
-        let commits = load_commits(&path, 1, 0).unwrap();
+        let commits = load_commits(&path, 1, 0, false).unwrap();
         assert_eq!(commits[0].short_id.len(), 8);
         assert!(commits[0].id.starts_with(&commits[0].short_id));
     }
@@ -338,7 +352,7 @@ mod tests {
         let (_dir, path) = init_empty_repo();
         make_commit_msg(&path, "Root");
         make_commit_msg(&path, "Child");
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         // Child (index 0) should have Root (index 1) as parent
         assert_eq!(commits[0].parent_ids.len(), 1);
         assert_eq!(commits[0].parent_ids[0], commits[1].id);
@@ -406,7 +420,7 @@ mod tests {
     #[test]
     fn test_load_commits_merge_commit_has_two_parents() {
         let (_dir, path, _) = init_repo_with_merge_commit();
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         let merge = commits.iter().find(|c| c.summary == "Merge").unwrap();
         assert_eq!(merge.parent_ids.len(), 2);
     }
@@ -536,7 +550,7 @@ mod tests {
             repo.tag_lightweight("v1.0", &obj, false).unwrap();
         }
 
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         assert_eq!(commits.len(), 1);
         assert!(commits[0].refs.iter().any(|r| r.name == "v1.0" && matches!(r.ref_type, RefType::Tag)));
     }
@@ -552,7 +566,7 @@ mod tests {
             repo.tag("v2.0", &obj, &sig, "Release v2.0", false).unwrap();
         }
 
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         assert_eq!(commits.len(), 1);
         assert!(commits[0].refs.iter().any(|r| r.name == "v2.0" && matches!(r.ref_type, RefType::Tag)));
     }
@@ -562,7 +576,7 @@ mod tests {
         let (_dir, path) = init_empty_repo();
         make_commit_msg(&path, "Head commit");
 
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         assert!(commits[0].refs.iter().any(|r| r.name == "HEAD" && matches!(r.ref_type, RefType::Head)));
     }
 
@@ -576,12 +590,58 @@ mod tests {
             repo.branch("feature", &head, false).unwrap();
         }
 
-        let commits = load_commits(&path, 100, 0).unwrap();
+        let commits = load_commits(&path, 100, 0, false).unwrap();
         // Should have both main/master and feature branch refs
         let branch_refs: Vec<_> = commits[0].refs.iter()
             .filter(|r| matches!(r.ref_type, RefType::LocalBranch))
             .collect();
         assert!(branch_refs.len() >= 2);
         assert!(branch_refs.iter().any(|r| r.name == "feature"));
+    }
+
+    #[test]
+    fn test_load_commits_excludes_remote_only_tip_by_default() {
+        let (_dir, path) = init_empty_repo();
+        let base_oid = make_commit_msg(&path, "Base commit");
+        let remote_only_oid = {
+            let repo = git2::Repository::open(&path).unwrap();
+            let base_commit = repo.find_commit(base_oid).unwrap();
+            let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+            let tree = base_commit.tree().unwrap();
+            let oid = repo
+                .commit(None, &sig, &sig, "Remote-only commit", &tree, &[&base_commit])
+                .unwrap();
+            repo.reference("refs/remotes/origin/feature-x", oid, true, "test")
+                .unwrap();
+            oid
+        };
+
+        let commits = load_commits(&path, 100, 0, false).unwrap();
+        assert!(!commits.iter().any(|c| c.id == remote_only_oid.to_string()));
+    }
+
+    #[test]
+    fn test_load_commits_includes_remote_only_tip_when_requested() {
+        let (_dir, path) = init_empty_repo();
+        let base_oid = make_commit_msg(&path, "Base commit");
+        let remote_only_oid = {
+            let repo = git2::Repository::open(&path).unwrap();
+            let base_commit = repo.find_commit(base_oid).unwrap();
+            let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+            let tree = base_commit.tree().unwrap();
+            let oid = repo
+                .commit(None, &sig, &sig, "Remote-only commit", &tree, &[&base_commit])
+                .unwrap();
+            repo.reference("refs/remotes/origin/feature-x", oid, true, "test")
+                .unwrap();
+            oid
+        };
+
+        let commits = load_commits(&path, 100, 0, true).unwrap();
+        let found = commits.iter().find(|c| c.id == remote_only_oid.to_string());
+        assert!(found.is_some());
+        assert!(found.unwrap().refs.iter().any(|r| {
+            r.name == "origin/feature-x" && matches!(r.ref_type, RefType::RemoteBranch)
+        }));
     }
 }
