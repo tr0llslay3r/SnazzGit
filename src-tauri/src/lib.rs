@@ -4,9 +4,9 @@ mod recent;
 mod theme;
 
 use commands::{
-    blame, branches, clone, commits, conflict, credentials, diff, rebase, reflog,
-    recent as recent_cmd, remotes, repo, search, shell, stash, status, tags, theme as theme_cmd,
-    watcher as watcher_cmd,
+    blame, branches, clone, commits, config as config_cmd, conflict, credentials, diff, rebase,
+    reflog, recent as recent_cmd, remotes, repo, search, shell, stash, status, submodule, tags,
+    theme as theme_cmd, watcher as watcher_cmd,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -65,6 +65,8 @@ pub fn run() {
             diff::get_commit_diff,
             diff::diff_refs,
             diff::read_file_at_ref,
+            diff::export_commit_as_patch,
+            diff::apply_patch_file,
             // Conflict resolution
             conflict::get_conflict_diff,
             conflict::resolve_conflict_ours_theirs,
@@ -94,6 +96,12 @@ pub fn run() {
             // Tags
             tags::create_tag,
             tags::delete_tag,
+            // Config
+            config_cmd::get_config_entries,
+            config_cmd::set_config_entry,
+            config_cmd::delete_config_entry,
+            // Submodules
+            submodule::list_submodules,
             // Theme
             theme_cmd::load_user_themes,
             theme_cmd::save_user_theme,

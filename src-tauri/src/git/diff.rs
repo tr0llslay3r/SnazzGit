@@ -287,6 +287,31 @@ pub fn diff_refs(path: &str, from_ref: &str, to_ref: &str) -> Result<Vec<DiffFil
     Ok(files)
 }
 
+pub fn export_commit_as_patch(path: &str, commit_id: &str, dest_path: &str) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let oid = Oid::from_str(commit_id)
+        .map_err(|e| GitError::General(format!("Invalid commit ID: {}", e)))?;
+    let commit = repo.find_commit(oid)?;
+    if commit.parent_count() > 1 {
+        return Err(GitError::General(
+            "Cannot export a merge commit as a patch".to_string(),
+        ));
+    }
+
+    let mut opts = git2::EmailCreateOptions::new();
+    let email = git2::Email::from_commit(&commit, &mut opts)?;
+    std::fs::write(dest_path, email.as_slice())?;
+    Ok(())
+}
+
+pub fn apply_patch_file(path: &str, patch_path: &str) -> Result<(), GitError> {
+    let repo = Repository::open(path)?;
+    let content = std::fs::read(patch_path)?;
+    let diff = git2::Diff::from_buffer(&content)?;
+    repo.apply(&diff, git2::ApplyLocation::Both, None)?;
+    Ok(())
+}
+
 pub fn highlight_diff(file: &mut DiffFile) {
     let ss = SyntaxSet::load_defaults_newlines();
     let ts = ThemeSet::load_defaults();
@@ -669,6 +694,90 @@ mod tests {
         highlight_diff(&mut file);
         // After highlighting, spans should be populated (syntect will highlight Rust code)
         assert!(!file.hunks[0].lines[0].spans.is_empty());
+    }
+
+    #[test]
+    fn test_export_commit_as_patch_writes_file() {
+        let (_dir, path) = init_repo();
+        let oid = make_commit(&path, &[("foo.txt", "line1\n")]);
+        let patch_file = tempfile::NamedTempFile::new().unwrap();
+        let dest = patch_file.path().to_str().unwrap();
+
+        export_commit_as_patch(&path, &oid.to_string(), dest).unwrap();
+
+        let content = fs::read_to_string(dest).unwrap();
+        assert!(content.contains("Subject:"));
+        assert!(content.contains("diff --git"));
+        assert!(content.contains("foo.txt"));
+    }
+
+    #[test]
+    fn test_export_commit_as_patch_invalid_commit_id_errors() {
+        let (_dir, path) = init_repo();
+        let patch_file = tempfile::NamedTempFile::new().unwrap();
+        let result = export_commit_as_patch(
+            &path,
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            patch_file.path().to_str().unwrap(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_export_merge_commit_errors() {
+        let (_dir, path) = init_repo();
+        let base = make_commit(&path, &[("base.txt", "base\n")]);
+        let repo = git2::Repository::open(&path).unwrap();
+        let base_commit = repo.find_commit(base).unwrap();
+        let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree = base_commit.tree().unwrap();
+        let merge_oid = repo
+            .commit(None, &sig, &sig, "Merge commit", &tree, &[&base_commit, &base_commit])
+            .unwrap();
+
+        let patch_file = tempfile::NamedTempFile::new().unwrap();
+        let result = export_commit_as_patch(
+            &path,
+            &merge_oid.to_string(),
+            patch_file.path().to_str().unwrap(),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_apply_patch_file_round_trip() {
+        // Repo A: produce the patch that changes foo.txt from "line1\n" to "line1\nline2\n"
+        let (_dir_a, path_a) = init_repo();
+        make_commit(&path_a, &[("foo.txt", "line1\n")]);
+        let change_oid = make_commit(&path_a, &[("foo.txt", "line1\nline2\n")]);
+        let patch_file = tempfile::NamedTempFile::new().unwrap();
+        let dest = patch_file.path().to_str().unwrap();
+        export_commit_as_patch(&path_a, &change_oid.to_string(), dest).unwrap();
+
+        // Repo B: independent repo at the pre-change state
+        let (_dir_b, path_b) = init_repo();
+        make_commit(&path_b, &[("foo.txt", "line1\n")]);
+
+        apply_patch_file(&path_b, dest).unwrap();
+
+        let applied = fs::read_to_string(PathBuf::from(&path_b).join("foo.txt")).unwrap();
+        assert_eq!(applied, "line1\nline2\n");
+
+        // ApplyLocation::Both should also stage the change
+        let repo_b = git2::Repository::open(&path_b).unwrap();
+        let status = repo_b.statuses(None).unwrap();
+        let entry = status.iter().find(|s| s.path() == Some("foo.txt")).unwrap();
+        assert!(entry.status().contains(git2::Status::INDEX_MODIFIED));
+    }
+
+    #[test]
+    fn test_apply_patch_file_invalid_patch_errors() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, &[("foo.txt", "line1\n")]);
+        let bad_patch = tempfile::NamedTempFile::new().unwrap();
+        fs::write(bad_patch.path(), "not a valid patch at all").unwrap();
+        let result = apply_patch_file(&path, bad_patch.path().to_str().unwrap());
+        assert!(result.is_err());
     }
 }
 

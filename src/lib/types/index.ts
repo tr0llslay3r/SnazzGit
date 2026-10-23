@@ -98,6 +98,22 @@ export interface StashEntry {
   commit_id: string;
 }
 
+export interface ConfigEntry {
+  name: string;
+  value: string;
+}
+
+export type SubmoduleStatus = 'up_to_date' | 'modified' | 'uninitialized';
+
+export interface SubmoduleInfo {
+  name: string;
+  path: string;
+  url: string | null;
+  head_id: string | null;
+  workdir_id: string | null;
+  status: SubmoduleStatus;
+}
+
 export interface BlameInfo {
   lines: BlameLine[];
 }

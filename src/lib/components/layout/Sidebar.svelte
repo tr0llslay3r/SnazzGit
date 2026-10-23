@@ -1,6 +1,6 @@
 <script lang="ts">
   import TreeView from '$lib/components/shared/TreeView.svelte';
-  import { repoInfo, localBranches, remoteBranches, stashEntries, workingStatus, commits, refreshAll, refreshStatus, refreshStashes } from '$lib/stores/repo';
+  import { repoInfo, localBranches, remoteBranches, stashEntries, submodules, workingStatus, commits, refreshAll, refreshStatus, refreshStashes, refreshSubmodules } from '$lib/stores/repo';
   import { showBranchDialog, showStashDialog, selectedCommit, selectedFile, selectedStash, addToast, jumpToCommitId, showCheckoutRemoteDialog, checkoutRemoteBranch, showTagDialog, tagTargetCommitId, compareRefs, showReflog, showAddRemoteDialog } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
@@ -10,6 +10,7 @@
   $effect(() => {
     if ($repoInfo) {
       refreshStashes();
+      refreshSubmodules();
     }
   });
 
@@ -88,6 +89,32 @@
       label: s.message || `stash@{${s.index}}`,
       data: s,
     }));
+  }
+
+  function submoduleStatusBadge(s: typeof $submodules[0]): string | undefined {
+    if (s.status === 'uninitialized') return 'uninit';
+    if (s.status === 'modified') return 'modified';
+    return undefined;
+  }
+
+  function submoduleNodes() {
+    return $submodules.map((s) => ({
+      label: s.path,
+      data: s,
+      badge: submoduleStatusBadge(s),
+    }));
+  }
+
+  function onSubmoduleContext(node: { label: string; data?: unknown }, e: MouseEvent) {
+    const sm = node.data as typeof $submodules[0] | undefined;
+    if (!sm) return;
+    const items: ContextMenuEntry[] = [
+      { label: 'Copy Path', action: () => navigator.clipboard.writeText(sm.path) },
+    ];
+    if (sm.url) {
+      items.push({ label: 'Copy URL', action: () => navigator.clipboard.writeText(sm.url!) });
+    }
+    showContextMenu(e.clientX, e.clientY, items);
   }
 
   let changeCount = $derived(
@@ -401,6 +428,16 @@
       </div>
       <TreeView nodes={stashNodes()} onSelect={onStashSelect} onContextMenu={onStashContext} />
     </div>
+
+    {#if $submodules.length > 0}
+      <div class="sidebar-section">
+        <div class="section-header">
+          <span>Submodules</span>
+          <span class="count-badge">{$submodules.length}</span>
+        </div>
+        <TreeView nodes={submoduleNodes()} onContextMenu={onSubmoduleContext} />
+      </div>
+    {/if}
   {/if}
 </aside>
 

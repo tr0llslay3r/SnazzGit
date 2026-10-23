@@ -12,6 +12,8 @@ import type {
   ConflictFile,
   Credentials,
   ReflogEntry,
+  ConfigEntry,
+  SubmoduleInfo,
 } from '$lib/types';
 
 // CLI
@@ -93,6 +95,12 @@ export const diffRefs = (path: string, fromRef: string, toRef: string) =>
 
 export const readFileAtRef = (path: string, filePath: string, gitRef?: string) =>
   invoke<string | null>('read_file_at_ref', { path, filePath, gitRef: gitRef ?? null });
+
+export const exportCommitAsPatch = (path: string, commitId: string, destPath: string) =>
+  invoke<void>('export_commit_as_patch', { path, commitId, destPath });
+
+export const applyPatchFile = (path: string, patchPath: string) =>
+  invoke<void>('apply_patch_file', { path, patchPath });
 
 // Status
 export const getStatus = (path: string) =>
@@ -202,6 +210,20 @@ export const createTag = (path: string, name: string, commitId: string, message?
 
 export const deleteTag = (path: string, name: string) =>
   invoke<void>('delete_tag', { path, name });
+
+// Config
+export const getConfigEntries = (path: string) =>
+  invoke<ConfigEntry[]>('get_config_entries', { path });
+
+export const setConfigEntry = (path: string, key: string, value: string) =>
+  invoke<void>('set_config_entry', { path, key, value });
+
+export const deleteConfigEntry = (path: string, key: string) =>
+  invoke<void>('delete_config_entry', { path, key });
+
+// Submodules
+export const listSubmodules = (path: string) =>
+  invoke<SubmoduleInfo[]>('list_submodules', { path });
 
 // Reflog
 export const getReflog = (path: string, limit: number) =>

@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
-import type { RepoInfo, CommitInfo, GraphRow, WorkingTreeStatus, StashEntry, RecentRepo } from '$lib/types';
+import type { RepoInfo, CommitInfo, GraphRow, WorkingTreeStatus, StashEntry, RecentRepo, SubmoduleInfo } from '$lib/types';
 import * as tauri from '$lib/utils/tauri';
 import { showRemoteBranchesInGraph } from './ui';
 
@@ -10,6 +10,7 @@ export const commits = writable<CommitInfo[]>([]);
 export const graphRows = writable<GraphRow[]>([]);
 export const workingStatus = writable<WorkingTreeStatus | null>(null);
 export const stashEntries = writable<StashEntry[]>([]);
+export const submodules = writable<SubmoduleInfo[]>([]);
 export const isLoading = writable(false);
 export const repoError = writable<string | null>(null);
 
@@ -37,6 +38,12 @@ export async function refreshStashes() {
   const repo = get(repoInfo);
   if (!repo) return;
   stashEntries.set(await tauri.stashList(repo.path));
+}
+
+export async function refreshSubmodules() {
+  const repo = get(repoInfo);
+  if (!repo) return;
+  submodules.set(await tauri.listSubmodules(repo.path));
 }
 
 export async function refreshAll() {
@@ -75,6 +82,7 @@ export function closeRepo() {
   graphRows.set([]);
   workingStatus.set(null);
   stashEntries.set([]);
+  submodules.set([]);
 }
 
 let watcherUnlisten: (() => void) | null = null;

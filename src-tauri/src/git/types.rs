@@ -187,6 +187,30 @@ pub struct HunkApplyParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigEntry {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubmoduleStatus {
+    UpToDate,
+    Modified,
+    Uninitialized,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmoduleInfo {
+    pub name: String,
+    pub path: String,
+    pub url: Option<String>,
+    pub head_id: Option<String>,
+    pub workdir_id: Option<String>,
+    pub status: SubmoduleStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConflictFile {
     pub path: String,
     pub hunks: Vec<ConflictHunk>,
