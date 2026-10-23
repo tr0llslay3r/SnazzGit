@@ -1,7 +1,8 @@
 use git2::Repository;
 
 use super::error::GitError;
-use super::types::StashEntry;
+use super::diff::highlight_diff;
+use super::types::{DiffFile, DiffHunk, DiffLine, DiffLineType, StashEntry};
 
 pub fn stash_list(path: &str) -> Result<Vec<StashEntry>, GitError> {
     let mut repo = Repository::open(path)?;
@@ -50,6 +51,98 @@ pub fn stash_drop(path: &str, index: usize) -> Result<(), GitError> {
     let mut repo = Repository::open(path)?;
     repo.stash_drop(index)?;
     Ok(())
+}
+
+pub fn stash_diff(path: &str, stash_commit_id: &str) -> Result<Vec<DiffFile>, GitError> {
+    let repo = Repository::open(path)?;
+    let oid = git2::Oid::from_str(stash_commit_id)
+        .map_err(|e| GitError::General(format!("Invalid stash commit ID: {}", e)))?;
+    let stash_commit = repo.find_commit(oid)?;
+    let stash_tree = stash_commit.tree()?;
+
+    // The stash commit's first parent is the commit the stash was created from
+    let parent = stash_commit.parent(0)?;
+    let parent_tree = parent.tree()?;
+
+    let diff = repo.diff_tree_to_tree(Some(&parent_tree), Some(&stash_tree), None)?;
+
+    let mut files: Vec<DiffFile> = Vec::new();
+    let mut current_file: Option<DiffFile> = None;
+    let mut current_hunk: Option<DiffHunk> = None;
+
+    diff.print(git2::DiffFormat::Patch, |delta, hunk, line| {
+        let file_name = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        match line.origin() {
+            'F' => {
+                if let Some(mut prev_file) = current_file.take() {
+                    if let Some(h) = current_hunk.take() {
+                        prev_file.hunks.push(h);
+                    }
+                    files.push(prev_file);
+                }
+                current_file = Some(DiffFile {
+                    path: file_name,
+                    hunks: Vec::new(),
+                });
+            }
+            'H' => {
+                if let Some(ref mut file) = current_file {
+                    if let Some(h) = current_hunk.take() {
+                        file.hunks.push(h);
+                    }
+                }
+                if let Some(h) = hunk {
+                    current_hunk = Some(DiffHunk {
+                        header: String::from_utf8_lossy(h.header()).trim().to_string(),
+                        old_start: h.old_start(),
+                        old_lines: h.old_lines(),
+                        new_start: h.new_start(),
+                        new_lines: h.new_lines(),
+                        lines: Vec::new(),
+                    });
+                }
+            }
+            '+' | '-' | ' ' => {
+                if let Some(ref mut hunk) = current_hunk {
+                    let content = String::from_utf8_lossy(line.content()).to_string();
+                    let line_type = match line.origin() {
+                        '+' => DiffLineType::Addition,
+                        '-' => DiffLineType::Deletion,
+                        _ => DiffLineType::Context,
+                    };
+                    hunk.lines.push(DiffLine {
+                        line_type,
+                        content,
+                        old_lineno: line.old_lineno(),
+                        new_lineno: line.new_lineno(),
+                        spans: Vec::new(),
+                    });
+                }
+            }
+            _ => {}
+        }
+        true
+    })?;
+
+    if let Some(mut file) = current_file {
+        if let Some(h) = current_hunk {
+            file.hunks.push(h);
+        }
+        files.push(file);
+    }
+
+    // Apply syntax highlighting
+    for file in &mut files {
+        highlight_diff(file);
+    }
+
+    Ok(files)
 }
 
 #[cfg(test)]
@@ -181,5 +274,38 @@ mod tests {
         let list = stash_list(&path).unwrap();
         assert_eq!(list.len(), 1);
         assert!(list[0].message.contains("WIP"));
+    }
+
+    #[test]
+    fn test_stash_diff_shows_changes() {
+        let (_dir, path) = init_repo_with_commit();
+        stage_new_file(&path, "diffme.txt", "hello world");
+        stash_save(&path, "diff test", false).unwrap();
+        let list = stash_list(&path).unwrap();
+        let commit_id = &list[0].commit_id;
+        let files = stash_diff(&path, commit_id).unwrap();
+        assert!(!files.is_empty());
+        assert_eq!(files[0].path, "diffme.txt");
+        assert!(!files[0].hunks.is_empty());
+        // Should have at least one addition line
+        let has_addition = files[0].hunks[0]
+            .lines
+            .iter()
+            .any(|l| matches!(l.line_type, DiffLineType::Addition));
+        assert!(has_addition);
+    }
+
+    #[test]
+    fn test_stash_diff_invalid_commit_id_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = stash_diff(&path, "not-a-valid-oid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_stash_diff_nonexistent_commit_errors() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = stash_diff(&path, "0000000000000000000000000000000000000000");
+        assert!(result.is_err());
     }
 }

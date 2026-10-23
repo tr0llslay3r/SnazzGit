@@ -220,6 +220,13 @@
       items.push({ label: 'File History', action: () => { $fileHistoryPath = filePath; } });
     }
     items.push({ label: 'Copy Path', action: () => navigator.clipboard.writeText(filePath) });
+    items.push({ separator: true });
+    items.push({ label: 'Reveal in File Manager', action: () => {
+      if ($repoInfo) tauri.openInFileManager($repoInfo.path + '/' + filePath).catch((e) => addToast(`${e}`, 'error'));
+    }});
+    items.push({ label: 'Open File', action: () => {
+      if ($repoInfo) tauri.openInDefaultApp($repoInfo.path + '/' + filePath).catch((e) => addToast(`${e}`, 'error'));
+    }});
     showContextMenu(e.clientX, e.clientY, items);
   }
 
@@ -229,6 +236,13 @@
       { separator: true },
       { label: 'File History', action: () => { $fileHistoryPath = filePath; } },
       { label: 'Copy Path', action: () => navigator.clipboard.writeText(filePath) },
+      { separator: true },
+      { label: 'Reveal in File Manager', action: () => {
+        if ($repoInfo) tauri.openInFileManager($repoInfo.path + '/' + filePath).catch((e) => addToast(`${e}`, 'error'));
+      }},
+      { label: 'Open File', action: () => {
+        if ($repoInfo) tauri.openInDefaultApp($repoInfo.path + '/' + filePath).catch((e) => addToast(`${e}`, 'error'));
+      }},
     ];
     showContextMenu(e.clientX, e.clientY, items);
   }

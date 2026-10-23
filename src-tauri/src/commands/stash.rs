@@ -1,5 +1,5 @@
 use crate::git::stash;
-use crate::git::types::StashEntry;
+use crate::git::types::{DiffFile, StashEntry};
 
 #[tauri::command]
 pub async fn stash_list(path: String) -> Result<Vec<StashEntry>, String> {
@@ -34,6 +34,14 @@ pub async fn stash_pop(path: String, index: usize) -> Result<(), String> {
 #[tauri::command]
 pub async fn stash_apply(path: String, index: usize) -> Result<(), String> {
     tokio::task::spawn_blocking(move || stash::stash_apply(&path, index))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn stash_diff(path: String, stash_commit_id: String) -> Result<Vec<DiffFile>, String> {
+    tokio::task::spawn_blocking(move || stash::stash_diff(&path, &stash_commit_id))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -133,6 +141,24 @@ mod tests {
     #[tokio::test]
     async fn test_stash_save_invalid_path() {
         let result = stash_save("/nonexistent".into(), "msg".into(), None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_stash_diff_shows_changes() {
+        let (_dir, path) = init_repo_dirty();
+        stash_save(path.clone(), "diff stash".into(), None).await.unwrap();
+        let list = stash_list(path.clone()).await.unwrap();
+        let commit_id = list[0].commit_id.clone();
+        let files = stash_diff(path, commit_id).await.unwrap();
+        assert!(!files.is_empty());
+        assert_eq!(files[0].path, "file.txt");
+    }
+
+    #[tokio::test]
+    async fn test_stash_diff_invalid_commit_id() {
+        let (_dir, path) = init_repo_with_commit();
+        let result = stash_diff(path, "invalid-oid".into()).await;
         assert!(result.is_err());
     }
 }

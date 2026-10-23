@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { showBranchDialog, addToast } from '$lib/stores/ui';
+  import { showBranchDialog, addToast, branchFromCommitId } from '$lib/stores/ui';
   import { repoInfo, refreshAll } from '$lib/stores/repo';
   import * as tauri from '$lib/utils/tauri';
 
@@ -15,28 +15,35 @@
   async function create() {
     if (!$repoInfo || !branchName.trim()) return;
     try {
-      await tauri.createBranch($repoInfo.path, branchName.trim());
+      const commitId = $branchFromCommitId || undefined;
+      await tauri.createBranch($repoInfo.path, branchName.trim(), commitId);
       await refreshAll();
-      addToast(`Branch '${branchName}' created`, 'success');
-      branchName = '';
-      $showBranchDialog = false;
+      const suffix = commitId ? ` from ${commitId.slice(0, 8)}` : '';
+      addToast(`Branch '${branchName}' created${suffix}`, 'success');
+      close();
     } catch (e) {
       addToast(`Failed to create branch: ${e}`, 'error');
     }
   }
 
+  function close() {
+    branchName = '';
+    $branchFromCommitId = null;
+    $showBranchDialog = false;
+  }
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') create();
-    if (e.key === 'Escape') { branchName = ''; $showBranchDialog = false; }
+    if (e.key === 'Escape') close();
   }
 </script>
 
 {#if $showBranchDialog}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="dialog-overlay" onclick={() => { branchName = ''; $showBranchDialog = false; }}>
+  <div class="dialog-overlay" onclick={close}>
     <!-- svelte-ignore a11y_interactive_supports_focus, a11y_no_static_element_interactions -->
     <div class="dialog" onclick={(e) => e.stopPropagation()} onkeydown={onKeydown} role="dialog" tabindex="-1">
-      <h3 class="dialog-title">New Branch</h3>
+      <h3 class="dialog-title">New Branch{$branchFromCommitId ? ` from ${$branchFromCommitId.slice(0, 8)}` : ''}</h3>
       <input
         class="dialog-input"
         type="text"
@@ -45,7 +52,7 @@
         bind:value={branchName}
       />
       <div class="dialog-actions">
-        <button class="btn-secondary" onclick={() => { branchName = ''; $showBranchDialog = false; }}>Cancel</button>
+        <button class="btn-secondary" onclick={close}>Cancel</button>
         <button class="btn-primary" onclick={create} disabled={!branchName.trim()}>Create</button>
       </div>
     </div>

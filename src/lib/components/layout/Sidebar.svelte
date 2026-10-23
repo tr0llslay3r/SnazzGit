@@ -1,9 +1,11 @@
 <script lang="ts">
   import TreeView from '$lib/components/shared/TreeView.svelte';
   import { repoInfo, localBranches, remoteBranches, stashEntries, workingStatus, commits, refreshAll, refreshStatus, refreshStashes } from '$lib/stores/repo';
-  import { showBranchDialog, showStashDialog, selectedCommit, selectedFile, addToast, jumpToCommitId, showCheckoutRemoteDialog, checkoutRemoteBranch, showTagDialog, tagTargetCommitId, compareRefs, showReflog, showAddRemoteDialog } from '$lib/stores/ui';
+  import { showBranchDialog, showStashDialog, selectedCommit, selectedFile, selectedStash, addToast, jumpToCommitId, showCheckoutRemoteDialog, checkoutRemoteBranch, showTagDialog, tagTargetCommitId, compareRefs, showReflog, showAddRemoteDialog } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
+
+  let branchFilter = $state('');
 
   $effect(() => {
     if ($repoInfo) {
@@ -16,16 +18,17 @@
     icon?: string;
     children?: TreeNode[];
     data?: unknown;
+    badge?: string | number;
   }
 
-  function buildTree(branches: typeof $localBranches, iconFn?: (b: typeof $localBranches[0]) => string): TreeNode[] {
+  function buildTree(branches: typeof $localBranches, iconFn?: (b: typeof $localBranches[0]) => string, badgeFn?: (b: typeof $localBranches[0]) => string | undefined): TreeNode[] {
     const root: TreeNode[] = [];
     const folders = new Map<string, TreeNode>();
 
     for (const b of branches) {
       const parts = b.name.split('/');
       if (parts.length === 1) {
-        root.push({ label: b.name, icon: iconFn?.(b) ?? '', data: b });
+        root.push({ label: b.name, icon: iconFn?.(b) ?? '', data: b, badge: badgeFn?.(b) });
         continue;
       }
 
@@ -41,13 +44,26 @@
         }
         parentList = folder.children!;
       }
-      parentList.push({ label: parts[parts.length - 1], icon: iconFn?.(b) ?? '', data: b });
+      parentList.push({ label: parts[parts.length - 1], icon: iconFn?.(b) ?? '', data: b, badge: badgeFn?.(b) });
     }
     return root;
   }
 
+  function aheadBehindBadge(b: typeof $localBranches[0]): string | undefined {
+    const parts: string[] = [];
+    if (b.ahead && b.ahead > 0) parts.push(`\u2191${b.ahead}`);
+    if (b.behind && b.behind > 0) parts.push(`\u2193${b.behind}`);
+    return parts.length > 0 ? parts.join(' ') : undefined;
+  }
+
+  function filteredLocalBranches() {
+    if (!branchFilter.trim()) return $localBranches;
+    const q = branchFilter.toLowerCase();
+    return $localBranches.filter(b => b.name.toLowerCase().includes(q));
+  }
+
   function branchNodes() {
-    return buildTree($localBranches, (b) => b.is_head ? '\u25CF' : '');
+    return buildTree(filteredLocalBranches(), (b) => b.is_head ? '\u25CF' : '', (b) => aheadBehindBadge(b));
   }
 
   function remoteNodes() {
@@ -198,6 +214,15 @@
     showContextMenu(e.clientX, e.clientY, items);
   }
 
+  function onStashSelect(node: { label: string; data?: unknown }) {
+    if (!node.data) return;
+    const stash = node.data as { index: number; message: string; commit_id: string };
+    $selectedCommit = null;
+    $compareRefs = null;
+    $showReflog = false;
+    $selectedStash = stash;
+  }
+
   function saveStash() {
     $showStashDialog = true;
   }
@@ -240,9 +265,9 @@
     }
   }
 
-  function remoteNodeToBranch(data: unknown): { name: string; is_head: boolean; is_remote: boolean; upstream: string | null; commit_id: string } {
+  function remoteNodeToBranch(data: unknown): import('$lib/types').BranchInfo {
     const d = data as any;
-    return { ...d, name: d.full_name ?? d.name };
+    return { ...d, name: d.full_name ?? d.name, ahead: d.ahead ?? null, behind: d.behind ?? null };
   }
 
   function onRemoteSelect(node: { label: string; data?: unknown }) {
@@ -337,6 +362,16 @@
         <span>Branches</span>
         <button class="section-action" onclick={() => $showBranchDialog = true} title="New branch">+</button>
       </div>
+      {#if $localBranches.length > 5}
+        <div class="filter-wrapper">
+          <input
+            class="filter-input"
+            type="text"
+            placeholder="Filter branches..."
+            bind:value={branchFilter}
+          />
+        </div>
+      {/if}
       <TreeView nodes={branchNodes()} onSelect={onBranchNavigate} onDblSelect={onBranchSelect} onContextMenu={onBranchContext} defaultExpanded={true} />
     </div>
 
@@ -364,7 +399,7 @@
         {/if}
         <button class="section-action" onclick={saveStash} title="Stash changes">+</button>
       </div>
-      <TreeView nodes={stashNodes()} onContextMenu={onStashContext} />
+      <TreeView nodes={stashNodes()} onSelect={onStashSelect} onContextMenu={onStashContext} />
     </div>
   {/if}
 </aside>
@@ -456,6 +491,27 @@
   .section-action:hover {
     background: var(--bg-surface);
     color: var(--text-primary);
+  }
+  .filter-wrapper {
+    padding: 2px 10px 4px;
+  }
+  .filter-input {
+    width: 100%;
+    padding: 3px 8px;
+    font-size: 11px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    outline: none;
+    box-sizing: border-box;
+  }
+  .filter-input:focus {
+    border-color: var(--accent);
+  }
+  .filter-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
   }
   .count-badge {
     font-size: 10px;

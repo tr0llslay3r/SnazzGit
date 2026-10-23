@@ -2,8 +2,8 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { loadSavedTheme } from '$lib/stores/theme';
-  import { showSearch, showBranchDialog, showStashDialog, showTagDialog, showCompareDialog, selectedCommit, fileHistoryPath, compareRefs, addToast } from '$lib/stores/ui';
-  import { repoInfo, workingStatus, refreshCommits, refreshStatus, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
+  import { showSearch, showBranchDialog, showStashDialog, showTagDialog, showCompareDialog, selectedCommit, selectedStash, fileHistoryPath, compareRefs, addToast } from '$lib/stores/ui';
+  import { repoInfo, workingStatus, commits, refreshAll, refreshCommits, refreshStatus, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
   import * as tauri from '$lib/utils/tauri';
   import SearchBar from '$lib/components/shared/SearchBar.svelte';
   import Toast from '$lib/components/shared/Toast.svelte';
@@ -38,6 +38,22 @@
       addToast('Staged all files', 'success');
     } catch (e) {
       addToast(`Stage all failed: ${e}`, 'error');
+    }
+  }
+
+  async function undoLastCommit() {
+    if (!$repoInfo) return;
+    const head = $commits[0];
+    if (!head || head.parent_ids.length === 0) {
+      addToast('Cannot undo: no parent commit', 'warning');
+      return;
+    }
+    try {
+      await tauri.resetToCommit($repoInfo.path, head.parent_ids[0], 'soft');
+      await refreshAll();
+      addToast(`Undone commit ${head.short_id} (changes kept staged)`, 'success');
+    } catch (e) {
+      addToast(`Undo failed: ${e}`, 'error');
     }
   }
 
@@ -86,7 +102,9 @@
     }
     // Escape: close file history, compare, deselect commit, close search
     if (e.key === 'Escape' && !isEditable) {
-      if ($compareRefs) {
+      if ($selectedStash) {
+        $selectedStash = null;
+      } else if ($compareRefs) {
         $compareRefs = null;
       } else if ($fileHistoryPath) {
         $fileHistoryPath = null;
@@ -95,6 +113,11 @@
       } else if ($showSearch) {
         $showSearch = false;
       }
+    }
+    // Ctrl+Z: undo last commit (only when not editing text)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z' && !isEditable) {
+      e.preventDefault();
+      undoLastCommit();
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
       if (!isEditable) {

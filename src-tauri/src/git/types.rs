@@ -19,6 +19,8 @@ pub struct BranchInfo {
     pub is_remote: bool,
     pub upstream: Option<String>,
     pub commit_id: String,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

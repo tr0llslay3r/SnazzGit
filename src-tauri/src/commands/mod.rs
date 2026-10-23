@@ -15,4 +15,5 @@ pub mod rebase;
 pub mod reflog;
 pub mod tags;
 pub mod theme;
+pub mod shell;
 pub mod watcher;

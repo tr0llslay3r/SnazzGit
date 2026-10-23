@@ -21,8 +21,9 @@
   import CompareDialog from '$lib/components/shared/CompareDialog.svelte';
   import AddRemoteDialog from '$lib/components/shared/AddRemoteDialog.svelte';
   import CompareView from '$lib/components/diff/CompareView.svelte';
+  import StashPreview from '$lib/components/commit/StashPreview.svelte';
   import { repoInfo, commits, recentRepos, isLoading, refreshCommits, refreshStatus, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
-  import { selectedCommit, showCloneDialog, addToast, fileHistoryPath, compareRefs, showReflog } from '$lib/stores/ui';
+  import { selectedCommit, showCloneDialog, addToast, fileHistoryPath, compareRefs, showReflog, selectedStash } from '$lib/stores/ui';
   import * as tauri from '$lib/utils/tauri';
 
   async function openRecent(path: string) {
@@ -195,6 +196,8 @@
         <div class="bottom-pane" style="height: {bottomHeight}px">
           {#if $showReflog}
             <ReflogView />
+          {:else if $selectedStash}
+            <StashPreview />
           {:else if $compareRefs}
             <CompareView />
           {:else if $fileHistoryPath && !$selectedCommit}

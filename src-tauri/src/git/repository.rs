@@ -70,12 +70,29 @@ fn get_branches(repo: &Repository) -> Result<Vec<BranchInfo>, GitError> {
             .map(|oid| oid.to_string())
             .unwrap_or_default();
 
+        let (ahead, behind) = if !is_remote {
+            if let (Some(local_oid), Some(ref up_name)) = (branch.get().target(), &upstream) {
+                repo.find_branch(up_name, git2::BranchType::Remote)
+                    .ok()
+                    .and_then(|up_branch| up_branch.get().target())
+                    .and_then(|remote_oid| repo.graph_ahead_behind(local_oid, remote_oid).ok())
+                    .map(|(a, b)| (Some(a as u32), Some(b as u32)))
+                    .unwrap_or((None, None))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
         branches.push(BranchInfo {
             name,
             is_head,
             is_remote,
             upstream,
             commit_id,
+            ahead,
+            behind,
         });
     }
     Ok(branches)
@@ -180,5 +197,111 @@ mod tests {
         make_commit_in_repo(&path);
         let info = open_repo(&path).unwrap();
         assert_eq!(info.stash_count, 0);
+    }
+
+    #[test]
+    fn test_ahead_behind_computed_for_tracking_branch() {
+        let (_dir, path) = init_repo();
+        make_commit_in_repo(&path);
+
+        let branch_name = {
+            let repo = git2::Repository::open(&path).unwrap();
+            let name = repo.head().unwrap().shorthand().unwrap().to_string();
+            name
+        };
+
+        // Point a fake remote-tracking ref at the same commit as the local
+        // branch, then set it as the local branch's upstream.
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            repo.remote("origin", "https://example.invalid/fake.git").unwrap();
+            let base_oid = repo.head().unwrap().target().unwrap();
+            repo.reference(
+                &format!("refs/remotes/origin/{}", branch_name),
+                base_oid,
+                true,
+                "test",
+            )
+            .unwrap();
+            let mut branch = repo.find_branch(&branch_name, git2::BranchType::Local).unwrap();
+            branch
+                .set_upstream(Some(&format!("origin/{}", branch_name)))
+                .unwrap();
+        }
+
+        // Local branch moves one commit ahead...
+        make_commit_in_repo(&path);
+
+        // ...while the remote-tracking ref moves one different commit ahead
+        // of the common base, so the branches have diverged in both directions.
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let base_oid = repo.head().unwrap().target().unwrap();
+            let base_commit = repo.find_commit(base_oid).unwrap().parent(0).unwrap();
+            let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+            let remote_only_oid = repo
+                .commit(
+                    None,
+                    &sig,
+                    &sig,
+                    "Remote-only commit",
+                    &base_commit.tree().unwrap(),
+                    &[&base_commit],
+                )
+                .unwrap();
+            repo.reference(
+                &format!("refs/remotes/origin/{}", branch_name),
+                remote_only_oid,
+                true,
+                "test",
+            )
+            .unwrap();
+        }
+
+        let info = open_repo(&path).unwrap();
+        let branch = info
+            .branches
+            .iter()
+            .find(|b| !b.is_remote && b.name == branch_name)
+            .unwrap();
+        assert_eq!(branch.ahead, Some(1));
+        assert_eq!(branch.behind, Some(1));
+    }
+
+    #[test]
+    fn test_ahead_behind_none_without_upstream() {
+        let (_dir, path) = init_repo();
+        make_commit_in_repo(&path);
+        let info = open_repo(&path).unwrap();
+        let branch = info.branches.iter().find(|b| !b.is_remote).unwrap();
+        assert_eq!(branch.ahead, None);
+        assert_eq!(branch.behind, None);
+    }
+
+    #[test]
+    fn test_ahead_behind_none_for_remote_branch_entry() {
+        let (_dir, path) = init_repo();
+        make_commit_in_repo(&path);
+        let branch_name = {
+            let repo = git2::Repository::open(&path).unwrap();
+            let name = repo.head().unwrap().shorthand().unwrap().to_string();
+            name
+        };
+        {
+            let repo = git2::Repository::open(&path).unwrap();
+            let oid = repo.head().unwrap().target().unwrap();
+            repo.reference(
+                &format!("refs/remotes/origin/{}", branch_name),
+                oid,
+                true,
+                "test",
+            )
+            .unwrap();
+        }
+
+        let info = open_repo(&path).unwrap();
+        let remote_entry = info.branches.iter().find(|b| b.is_remote).unwrap();
+        assert_eq!(remote_entry.ahead, None);
+        assert_eq!(remote_entry.behind, None);
     }
 }
