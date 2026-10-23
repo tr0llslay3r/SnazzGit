@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { BranchInfo, CommitInfo, Toast, CredentialRequest } from '$lib/types';
+import type { BranchInfo, CommitInfo, Toast, CredentialRequest, InteractiveRebaseRow } from '$lib/types';
 
 export const selectedCommit = writable<CommitInfo | null>(null);
 export const selectedFile = writable<string | null>(null);
@@ -32,6 +32,9 @@ export const showAddRemoteDialog = writable(false);
 export const selectedStash = writable<{ index: number; message: string; commit_id: string } | null>(null);
 export const showRemoteBranchesInGraph = writable(false);
 export const showConfigDialog = writable(false);
+export const showInteractiveRebaseDialog = writable(false);
+export const interactiveRebaseBaseCommitId = writable<string | null>(null);
+export const interactiveRebaseInitialTodo = writable<InteractiveRebaseRow[]>([]);
 
 let toastId = 0;
 

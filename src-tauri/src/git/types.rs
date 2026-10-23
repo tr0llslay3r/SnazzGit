@@ -224,3 +224,37 @@ pub struct CommitSignatureInfo {
     pub valid: bool,
     pub signer: Option<String>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RebaseAction {
+    Pick,
+    Reword,
+    Edit,
+    Squash,
+    Fixup,
+    Drop,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RebaseTodoItem {
+    pub commit_id: String,
+    pub action: RebaseAction,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RebasePausedReason {
+    Conflict,
+    Edit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InteractiveRebaseStatus {
+    pub active: bool,
+    pub total_steps: usize,
+    pub completed_steps: usize,
+    pub paused_reason: Option<RebasePausedReason>,
+    pub conflicted_files: Option<Vec<String>>,
+}

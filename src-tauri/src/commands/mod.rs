@@ -6,6 +6,7 @@ pub mod config;
 pub mod conflict;
 pub mod credentials;
 pub mod diff;
+pub mod interactive_rebase;
 pub mod recent;
 pub mod remotes;
 pub mod repo;

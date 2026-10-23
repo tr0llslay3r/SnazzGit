@@ -15,6 +15,8 @@ import type {
   ConfigEntry,
   SubmoduleInfo,
   CommitSignatureInfo,
+  RebaseTodoItem,
+  InteractiveRebaseStatus,
 } from '$lib/types';
 
 // CLI
@@ -245,6 +247,19 @@ export const rebaseContinue = (path: string) =>
 
 export const squashCommits = (path: string, count: number, message: string) =>
   invoke<string>('squash_commits', { path, count, message });
+
+// Interactive rebase
+export const startInteractiveRebase = (path: string, baseCommitId: string, todo: RebaseTodoItem[]) =>
+  invoke<string>('start_interactive_rebase', { path, baseCommitId, todo });
+
+export const interactiveRebaseContinue = (path: string) =>
+  invoke<string>('interactive_rebase_continue', { path });
+
+export const interactiveRebaseAbort = (path: string) =>
+  invoke<void>('interactive_rebase_abort', { path });
+
+export const getInteractiveRebaseStatus = (path: string) =>
+  invoke<InteractiveRebaseStatus>('get_interactive_rebase_status', { path });
 
 // Force push
 export const forcePush = (path: string, remoteName: string, credentials?: Credentials) =>
