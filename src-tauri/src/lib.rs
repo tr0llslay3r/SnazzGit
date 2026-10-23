@@ -35,6 +35,7 @@ pub fn run() {
             commits::get_commit_detail,
             commits::compute_graph,
             commits::create_commit,
+            commits::get_commit_signature,
             commits::file_history,
             commits::cherry_pick_commit,
             // Branches

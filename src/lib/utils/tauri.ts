@@ -14,6 +14,7 @@ import type {
   ReflogEntry,
   ConfigEntry,
   SubmoduleInfo,
+  CommitSignatureInfo,
 } from '$lib/types';
 
 // CLI
@@ -33,6 +34,9 @@ export const loadCommits = (path: string, limit: number, offset: number, include
 
 export const getCommitDetail = (path: string, commitId: string) =>
   invoke<CommitInfo>('get_commit_detail', { path, commitId });
+
+export const getCommitSignature = (path: string, commitId: string) =>
+  invoke<CommitSignatureInfo>('get_commit_signature', { path, commitId });
 
 export const computeGraph = (commits: CommitInfo[]) =>
   invoke<GraphRow[]>('compute_graph', { commits });

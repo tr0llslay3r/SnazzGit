@@ -5,17 +5,20 @@
   import { repoInfo } from '$lib/stores/repo';
   import { showContextMenu } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
-  import type { DiffFile } from '$lib/types';
+  import type { DiffFile, CommitSignatureInfo } from '$lib/types';
 
   let diffFiles = $state<DiffFile[]>([]);
   let expandedFile = $state<string | null>(null);
+  let signatureInfo = $state<CommitSignatureInfo | null>(null);
 
   $effect(() => {
     if ($selectedCommit && $repoInfo) {
       loadDiff();
+      loadSignature();
     } else {
       diffFiles = [];
       expandedFile = null;
+      signatureInfo = null;
     }
   });
 
@@ -25,6 +28,15 @@
       diffFiles = await tauri.getCommitDiff($repoInfo.path, $selectedCommit.id);
     } catch {
       diffFiles = [];
+    }
+  }
+
+  async function loadSignature() {
+    if (!$selectedCommit || !$repoInfo) return;
+    try {
+      signatureInfo = await tauri.getCommitSignature($repoInfo.path, $selectedCommit.id);
+    } catch {
+      signatureInfo = null;
     }
   }
 
@@ -71,6 +83,18 @@
               {#if i > 0}, {/if}
               <code class="parent-hash">{parent.slice(0, 8)}</code>
             {/each}
+          </span>
+        </div>
+      {/if}
+      {#if signatureInfo?.signed}
+        <div class="detail-row">
+          <span class="detail-label">Signature</span>
+          <span class="detail-value signature" class:valid={signatureInfo.valid} class:invalid={!signatureInfo.valid}>
+            {#if signatureInfo.valid}
+              &#10003; Signed by {signatureInfo.signer ?? 'unknown'}
+            {:else}
+              &#9888; Invalid signature{signatureInfo.signer ? ` (${signatureInfo.signer})` : ''}
+            {/if}
           </span>
         </div>
       {/if}
@@ -217,6 +241,8 @@
   }
   .stat-added { color: var(--success); }
   .stat-removed { color: var(--danger); }
+  .signature.valid { color: var(--success); }
+  .signature.invalid { color: var(--danger); }
   .file-diff {
     border: 1px solid var(--border);
     border-radius: 4px;

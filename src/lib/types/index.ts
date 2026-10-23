@@ -103,6 +103,12 @@ export interface ConfigEntry {
   value: string;
 }
 
+export interface CommitSignatureInfo {
+  signed: boolean;
+  valid: boolean;
+  signer: string | null;
+}
+
 export type SubmoduleStatus = 'up_to_date' | 'modified' | 'uninitialized';
 
 export interface SubmoduleInfo {

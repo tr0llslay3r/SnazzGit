@@ -16,6 +16,7 @@ pub mod status;
 pub mod submodule;
 pub mod rebase;
 pub mod reflog;
+pub mod sign;
 pub mod tag;
 pub mod types;
 pub mod watcher;
