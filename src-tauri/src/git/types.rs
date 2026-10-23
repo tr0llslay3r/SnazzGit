@@ -217,3 +217,10 @@ pub struct ConflictFile {
     pub our_label: String,
     pub their_label: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitSignatureInfo {
+    pub signed: bool,
+    pub valid: bool,
+    pub signer: Option<String>,
+}

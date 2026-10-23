@@ -1,6 +1,7 @@
 use crate::git::commit;
 use crate::git::graph;
-use crate::git::types::{CommitInfo, GraphRow};
+use crate::git::sign;
+use crate::git::types::{CommitInfo, CommitSignatureInfo, GraphRow};
 
 #[tauri::command]
 pub async fn load_commits(
@@ -43,6 +44,27 @@ pub async fn create_commit(
         let tree_oid = index.write_tree().map_err(|e| e.to_string())?;
         let tree = repo.find_tree(tree_oid).map_err(|e| e.to_string())?;
 
+        let should_sign = repo
+            .config()
+            .and_then(|c| c.get_bool("commit.gpgsign"))
+            .unwrap_or(false);
+
+        let parents = if amend {
+            let head = repo.head().map_err(|e| e.to_string())?;
+            let head_commit = head.peel_to_commit().map_err(|e| e.to_string())?;
+            head_commit.parents().collect::<Vec<_>>()
+        } else if let Ok(head) = repo.head() {
+            vec![head.peel_to_commit().map_err(|e| e.to_string())?]
+        } else {
+            vec![]
+        };
+        let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
+
+        if should_sign {
+            return sign::create_signed_commit(&repo, &sig, &message, &tree, &parent_refs, None)
+                .map_err(|e| e.to_string());
+        }
+
         if amend {
             let head = repo.head().map_err(|e| e.to_string())?;
             let head_commit = head.peel_to_commit().map_err(|e| e.to_string())?;
@@ -58,12 +80,6 @@ pub async fn create_commit(
                 .map_err(|e| e.to_string())?;
             Ok(oid.to_string())
         } else {
-            let parents = if let Ok(head) = repo.head() {
-                vec![head.peel_to_commit().map_err(|e| e.to_string())?]
-            } else {
-                vec![]
-            };
-            let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
             let oid = repo
                 .commit(Some("HEAD"), &sig, &sig, &message, &tree, &parent_refs)
                 .map_err(|e| e.to_string())?;
@@ -72,6 +88,17 @@ pub async fn create_commit(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_commit_signature(
+    path: String,
+    commit_id: String,
+) -> Result<CommitSignatureInfo, String> {
+    tokio::task::spawn_blocking(move || sign::get_commit_signature(&path, &commit_id))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -240,6 +267,29 @@ mod tests {
             .unwrap();
         let result = create_commit(path, "Second".into(), false).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_get_commit_signature_unsigned_commit() {
+        let (_dir, path) = init_repo();
+        let oid = make_commit(&path, "Unsigned commit");
+        let result = get_commit_signature(path, oid.to_string()).await;
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        assert!(!info.signed);
+        assert!(info.signer.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_commit_signature_invalid_commit_id() {
+        let (_dir, path) = init_repo();
+        make_commit(&path, "Seed");
+        let result = get_commit_signature(
+            path,
+            "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef".into(),
+        )
+        .await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
