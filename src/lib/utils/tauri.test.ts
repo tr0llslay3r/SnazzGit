@@ -74,7 +74,12 @@ describe('single-arg commands', () => {
 describe('multi-arg commands', () => {
   it('loadCommits invokes load_commits with path, limit, offset', async () => {
     await loadCommits('/repo', 100, 0);
-    expect(invoke).toHaveBeenCalledWith('load_commits', { path: '/repo', limit: 100, offset: 0 });
+    expect(invoke).toHaveBeenCalledWith('load_commits', { path: '/repo', limit: 100, offset: 0, includeRemote: false });
+  });
+
+  it('loadCommits passes includeRemote when true', async () => {
+    await loadCommits('/repo', 100, 0, true);
+    expect(invoke).toHaveBeenCalledWith('load_commits', { path: '/repo', limit: 100, offset: 0, includeRemote: true });
   });
 
   it('checkoutBranch invokes checkout_branch with path and name', async () => {

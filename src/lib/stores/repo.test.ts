@@ -68,7 +68,6 @@ function makeStatus(overrides?: Partial<WorkingTreeStatus>): WorkingTreeStatus {
     staged: [],
     unstaged: [],
     untracked: [],
-    conflicted: [],
     ...overrides,
   };
 }
@@ -120,7 +119,7 @@ describe('refreshCommits', () => {
 
     await refreshCommits();
 
-    expect(tauri.loadCommits).toHaveBeenCalledWith('/test/repo', 500, 0);
+    expect(tauri.loadCommits).toHaveBeenCalledWith('/test/repo', 500, 0, false);
     expect(tauri.computeGraph).toHaveBeenCalledWith(mockCommits);
     expect(get(commits)).toEqual(mockCommits);
     expect(get(graphRows)).toEqual(mockGraph);
@@ -347,7 +346,7 @@ describe('setupWatcher', () => {
 
     // Get the callback passed to listen and invoke it
     const callback = vi.mocked(listen).mock.calls[0][1];
-    await callback({});
+    await callback({ event: 'fs-changed', id: 0, payload: undefined });
 
     expect(tauri.getStatus).toHaveBeenCalledWith('/test/repo');
   });

@@ -30,6 +30,7 @@ export const compareRefs = writable<{ from: string; to: string } | null>(null);
 export const showReflog = writable(false);
 export const showAddRemoteDialog = writable(false);
 export const selectedStash = writable<{ index: number; message: string; commit_id: string } | null>(null);
+export const showRemoteBranchesInGraph = writable(false);
 
 let toastId = 0;
 

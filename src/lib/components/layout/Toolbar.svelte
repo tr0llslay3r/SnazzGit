@@ -1,6 +1,6 @@
 <script lang="ts">
   import { repoInfo, isLoading, refreshAll, refreshCommits, refreshStatus, refreshRepo, closeRepo, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
-  import { showSearch, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, compareRefs, pendingCredentialRequest, addToast } from '$lib/stores/ui';
+  import { showSearch, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, compareRefs, pendingCredentialRequest, addToast, showRemoteBranchesInGraph } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -126,6 +126,15 @@
       addToast(`Refresh failed: ${e}`, 'error');
     }
   }
+
+  async function toggleRemoteBranchesInGraph() {
+    $showRemoteBranchesInGraph = !$showRemoteBranchesInGraph;
+    try {
+      await refreshCommits();
+    } catch (e) {
+      addToast(`Failed to refresh: ${e}`, 'error');
+    }
+  }
 </script>
 
 <nav class="toolbar">
@@ -180,6 +189,10 @@
       <button class="toolbar-btn" onclick={openTerminalHere} title="Open Terminal">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25zM7.25 8a.749.749 0 0 1-.22.53l-2.25 2.25a.749.749 0 1 1-1.06-1.06L5.44 8 3.72 6.28a.749.749 0 1 1 1.06-1.06l2.25 2.25c.141.14.22.331.22.53zm1.5 1.5h3a.75.75 0 0 1 0 1.5h-3a.75.75 0 0 1 0-1.5z" fill="currentColor"/></svg>
         <span>Terminal</span>
+      </button>
+      <button class="toolbar-btn" onclick={toggleRemoteBranchesInGraph} class:active={$showRemoteBranchesInGraph} title="Show remote branches in the commit graph">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" fill="currentColor"/></svg>
+        <span>Remote Branches</span>
       </button>
     </div>
   {/if}
