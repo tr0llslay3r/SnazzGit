@@ -7,8 +7,9 @@ pub async fn load_commits(
     path: String,
     limit: usize,
     offset: usize,
+    include_remote: bool,
 ) -> Result<Vec<CommitInfo>, String> {
-    tokio::task::spawn_blocking(move || commit::load_commits(&path, limit, offset))
+    tokio::task::spawn_blocking(move || commit::load_commits(&path, limit, offset, include_remote))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -128,7 +129,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_commits_empty_repo() {
         let (_dir, path) = init_repo();
-        let result = load_commits(path, 100, 0).await;
+        let result = load_commits(path, 100, 0, false).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
     }
@@ -137,7 +138,7 @@ mod tests {
     async fn test_load_commits_single() {
         let (_dir, path) = init_repo();
         make_commit(&path, "First commit");
-        let result = load_commits(path, 100, 0).await;
+        let result = load_commits(path, 100, 0, false).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 1);
     }
@@ -148,14 +149,38 @@ mod tests {
         make_commit(&path, "A");
         make_commit(&path, "B");
         make_commit(&path, "C");
-        let result = load_commits(path, 2, 0).await;
+        let result = load_commits(path, 2, 0, false).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 2);
     }
 
     #[tokio::test]
+    async fn test_load_commits_include_remote_flag_is_passed_through() {
+        let (_dir, path) = init_repo();
+        let base_oid = make_commit(&path, "Base commit");
+        let remote_only_oid = {
+            let repo = git2::Repository::open(&path).unwrap();
+            let base_commit = repo.find_commit(base_oid).unwrap();
+            let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+            let tree = base_commit.tree().unwrap();
+            let oid = repo
+                .commit(None, &sig, &sig, "Remote-only commit", &tree, &[&base_commit])
+                .unwrap();
+            repo.reference("refs/remotes/origin/feature-x", oid, true, "test")
+                .unwrap();
+            oid
+        };
+
+        let without_remote = load_commits(path.clone(), 100, 0, false).await.unwrap();
+        assert!(!without_remote.iter().any(|c| c.id == remote_only_oid.to_string()));
+
+        let with_remote = load_commits(path, 100, 0, true).await.unwrap();
+        assert!(with_remote.iter().any(|c| c.id == remote_only_oid.to_string()));
+    }
+
+    #[tokio::test]
     async fn test_load_commits_invalid_path() {
-        let result = load_commits("/nonexistent/path".into(), 100, 0).await;
+        let result = load_commits("/nonexistent/path".into(), 100, 0, false).await;
         assert!(result.is_err());
     }
 
@@ -190,7 +215,7 @@ mod tests {
         let (_dir, path) = init_repo();
         make_commit(&path, "A");
         make_commit(&path, "B");
-        let commits = load_commits(path, 100, 0).await.unwrap();
+        let commits = load_commits(path, 100, 0, false).await.unwrap();
         let result = compute_graph(commits).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 2);

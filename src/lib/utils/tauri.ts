@@ -26,8 +26,8 @@ export const initRepository = (path: string) =>
   invoke<RepoInfo>('init_repository', { path });
 
 // Commits
-export const loadCommits = (path: string, limit: number, offset: number) =>
-  invoke<CommitInfo[]>('load_commits', { path, limit, offset });
+export const loadCommits = (path: string, limit: number, offset: number, includeRemote = false) =>
+  invoke<CommitInfo[]>('load_commits', { path, limit, offset, includeRemote });
 
 export const getCommitDetail = (path: string, commitId: string) =>
   invoke<CommitInfo>('get_commit_detail', { path, commitId });

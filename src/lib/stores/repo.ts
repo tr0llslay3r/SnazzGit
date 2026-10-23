@@ -2,6 +2,7 @@ import { writable, derived, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
 import type { RepoInfo, CommitInfo, GraphRow, WorkingTreeStatus, StashEntry, RecentRepo } from '$lib/types';
 import * as tauri from '$lib/utils/tauri';
+import { showRemoteBranchesInGraph } from './ui';
 
 export const recentRepos = writable<RecentRepo[]>([]);
 export const repoInfo = writable<RepoInfo | null>(null);
@@ -21,7 +22,7 @@ export async function refreshRepo() {
 export async function refreshCommits() {
   const repo = get(repoInfo);
   if (!repo) return;
-  const loaded = await tauri.loadCommits(repo.path, 500, 0);
+  const loaded = await tauri.loadCommits(repo.path, 500, 0, get(showRemoteBranchesInGraph));
   commits.set(loaded);
   graphRows.set(await tauri.computeGraph(loaded));
 }

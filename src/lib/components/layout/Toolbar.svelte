@@ -1,6 +1,6 @@
 <script lang="ts">
   import { repoInfo, isLoading, refreshAll, refreshCommits, refreshStatus, refreshRepo, closeRepo, loadRecentRepos, setupWatcher } from '$lib/stores/repo';
-  import { showSearch, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, compareRefs, pendingCredentialRequest, addToast } from '$lib/stores/ui';
+  import { showSearch, showThemePicker, showCloneDialog, showCredentialDialog, showCompareDialog, showReflog, compareRefs, pendingCredentialRequest, addToast, showRemoteBranchesInGraph } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import * as tauri from '$lib/utils/tauri';
   import { open } from '@tauri-apps/plugin-dialog';
@@ -117,6 +117,15 @@
       addToast(`Refresh failed: ${e}`, 'error');
     }
   }
+
+  async function toggleRemoteBranchesInGraph() {
+    $showRemoteBranchesInGraph = !$showRemoteBranchesInGraph;
+    try {
+      await refreshCommits();
+    } catch (e) {
+      addToast(`Failed to refresh: ${e}`, 'error');
+    }
+  }
 </script>
 
 <nav class="toolbar">
@@ -167,6 +176,10 @@
       <button class="toolbar-btn" onclick={doRefresh} disabled={$isLoading} title="Refresh">
         <svg viewBox="0 0 16 16" width="16" height="16"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z" fill="currentColor"/><path d="M8 1v4l3-2-3-2z" fill="currentColor"/></svg>
         <span>Refresh</span>
+      </button>
+      <button class="toolbar-btn" onclick={toggleRemoteBranchesInGraph} class:active={$showRemoteBranchesInGraph} title="Show remote branches in the commit graph">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" fill="currentColor"/></svg>
+        <span>Remote Branches</span>
       </button>
     </div>
   {/if}
