@@ -1,13 +1,23 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Resolve what `open_in_file_manager` should actually open: a file's parent
+/// directory, or the path itself if it's already a directory (or doesn't
+/// exist). Extracted so this can be tested without invoking the real file
+/// manager — `opener::open` shells out to xdg-open/Explorer/Finder for real,
+/// and if the target is a short-lived temp path, that process can end up
+/// trying to open it after it's already been deleted, surfacing as a visible
+/// "file not found" error dialog.
+fn resolve_file_manager_target(path: &Path) -> PathBuf {
+    if path.is_file() {
+        path.parent().unwrap_or(path).to_path_buf()
+    } else {
+        path.to_path_buf()
+    }
+}
 
 #[tauri::command]
 pub async fn open_in_file_manager(path: String) -> Result<(), String> {
-    let target = Path::new(&path);
-    let dir = if target.is_file() {
-        target.parent().unwrap_or(target)
-    } else {
-        target
-    };
+    let dir = resolve_file_manager_target(Path::new(&path));
     opener::open(dir).map_err(|e| e.to_string())
 }
 
@@ -91,29 +101,23 @@ mod tests {
         assert!(result.unwrap_err().contains("No terminal emulator found"));
     }
 
-    #[tokio::test]
-    async fn test_open_in_file_manager_resolves_file_to_parent() {
-        // Create a temp file and verify the function runs without panic.
-        // opener::open fires xdg-open asynchronously, so it may return Ok
-        // even in headless environments. We verify it doesn't panic.
+    #[test]
+    fn test_resolve_file_manager_target_file_returns_parent() {
         let dir = tempfile::TempDir::new().unwrap();
         let file_path = dir.path().join("test.txt");
         std::fs::write(&file_path, "test").unwrap();
-        let _ = open_in_file_manager(file_path.to_str().unwrap().into()).await;
+        assert_eq!(resolve_file_manager_target(&file_path), dir.path());
     }
 
-    #[tokio::test]
-    async fn test_open_in_file_manager_directory_path() {
-        // When given a directory, it should pass the directory directly to opener.
+    #[test]
+    fn test_resolve_file_manager_target_directory_returns_itself() {
         let dir = tempfile::TempDir::new().unwrap();
-        let _ = open_in_file_manager(dir.path().to_str().unwrap().into()).await;
+        assert_eq!(resolve_file_manager_target(dir.path()), dir.path());
     }
 
-    #[tokio::test]
-    async fn test_open_in_default_app_runs_without_panic() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let file_path = dir.path().join("test.txt");
-        std::fs::write(&file_path, "test").unwrap();
-        let _ = open_in_default_app(file_path.to_str().unwrap().into()).await;
+    #[test]
+    fn test_resolve_file_manager_target_nonexistent_path_returns_itself() {
+        let path = Path::new("/nonexistent/snazzgit-test-path");
+        assert_eq!(resolve_file_manager_target(path), path);
     }
 }
