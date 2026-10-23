@@ -77,7 +77,13 @@ mod tests {
         let tree = repo.find_tree(tree_id).unwrap();
         repo.commit(Some("HEAD"), &sig, &sig, "Initial", &tree, &[])
             .unwrap();
-        std::fs::write(dir.path().join("file.txt"), "modified").unwrap();
+        // Deliberately a different length than "original" above: on a fast
+        // CI runner the rewrite can land within the same mtime tick as the
+        // commit just made, and if the size also happened to match, git's
+        // stat-based fast path can report the file unchanged without ever
+        // comparing content ("racy git") — which showed up as stash_diff
+        // intermittently returning no changed files at all.
+        std::fs::write(dir.path().join("file.txt"), "modified content").unwrap();
         (dir, path)
     }
 
