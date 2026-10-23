@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
-import type { RepoInfo, CommitInfo, GraphRow, WorkingTreeStatus, StashEntry, RecentRepo, SubmoduleInfo } from '$lib/types';
+import type { RepoInfo, CommitInfo, GraphRow, WorkingTreeStatus, StashEntry, RecentRepo, SubmoduleInfo, InteractiveRebaseStatus } from '$lib/types';
 import * as tauri from '$lib/utils/tauri';
 import { showRemoteBranchesInGraph } from './ui';
 
@@ -13,6 +13,7 @@ export const stashEntries = writable<StashEntry[]>([]);
 export const submodules = writable<SubmoduleInfo[]>([]);
 export const isLoading = writable(false);
 export const repoError = writable<string | null>(null);
+export const interactiveRebaseStatus = writable<InteractiveRebaseStatus | null>(null);
 
 export async function refreshRepo() {
   const repo = get(repoInfo);
@@ -32,6 +33,20 @@ export async function refreshStatus() {
   const repo = get(repoInfo);
   if (!repo) return;
   workingStatus.set(await tauri.getStatus(repo.path));
+  await refreshInteractiveRebaseStatus();
+}
+
+export async function refreshInteractiveRebaseStatus() {
+  const repo = get(repoInfo);
+  if (!repo) {
+    interactiveRebaseStatus.set(null);
+    return;
+  }
+  try {
+    interactiveRebaseStatus.set(await tauri.getInteractiveRebaseStatus(repo.path));
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function refreshStashes() {
@@ -83,6 +98,7 @@ export function closeRepo() {
   workingStatus.set(null);
   stashEntries.set([]);
   submodules.set([]);
+  interactiveRebaseStatus.set(null);
 }
 
 let watcherUnlisten: (() => void) | null = null;

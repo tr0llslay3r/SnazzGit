@@ -99,6 +99,11 @@ pub fn get_status(path: &str) -> Result<WorkingTreeStatus, GitError> {
     })
 }
 
+pub fn is_clean(path: &str) -> Result<bool, GitError> {
+    let status = get_status(path)?;
+    Ok(status.staged.is_empty() && status.unstaged.is_empty() && status.untracked.is_empty())
+}
+
 pub fn stage_file(path: &str, file_path: &str) -> Result<(), GitError> {
     let repo = Repository::open(path)?;
     let mut index = repo.index()?;
@@ -243,6 +248,27 @@ mod tests {
         assert!(status.staged.is_empty());
         assert!(status.unstaged.is_empty());
         assert!(status.untracked.is_empty());
+    }
+
+    #[test]
+    fn test_is_clean_true_for_fresh_repo() {
+        let (_dir, path) = init_repo_with_commit();
+        assert!(is_clean(&path).unwrap());
+    }
+
+    #[test]
+    fn test_is_clean_false_with_untracked_file() {
+        let (_dir, path) = init_repo_with_commit();
+        write_file(&path, "new_file.txt", "hello");
+        assert!(!is_clean(&path).unwrap());
+    }
+
+    #[test]
+    fn test_is_clean_false_with_staged_file() {
+        let (_dir, path) = init_repo_with_commit();
+        write_file(&path, "staged.txt", "content");
+        stage_file(&path, "staged.txt").unwrap();
+        assert!(!is_clean(&path).unwrap());
     }
 
     #[test]

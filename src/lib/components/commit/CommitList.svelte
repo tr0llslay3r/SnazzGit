@@ -1,6 +1,6 @@
 <script lang="ts">
   import { commits, graphRows, repoInfo, refreshAll } from '$lib/stores/repo';
-  import { selectedCommit, showBranchDialog, branchFromCommitId, addToast, jumpToCommitId, showTagDialog, tagTargetCommitId, compareRefs, showReflog, selectedStash } from '$lib/stores/ui';
+  import { selectedCommit, showBranchDialog, branchFromCommitId, addToast, jumpToCommitId, showTagDialog, tagTargetCommitId, compareRefs, showReflog, selectedStash, showInteractiveRebaseDialog, interactiveRebaseBaseCommitId, interactiveRebaseInitialTodo } from '$lib/stores/ui';
   import { showContextMenu, type ContextMenuEntry } from '$lib/stores/contextmenu';
   import CommitGraph from './CommitGraph.svelte';
   import * as tauri from '$lib/utils/tauri';
@@ -134,6 +134,19 @@
           await refreshAll();
           addToast(`Squashed ${count} commits`, 'success');
         } catch (err) { addToast(`Squash failed: ${err}`, 'error'); }
+      }},
+      { label: 'Interactive Rebase from here...', action: () => {
+        if (!$repoInfo) return;
+        const idx = $commits.findIndex(c => c.id === commit.id);
+        if (idx < 0) return;
+        if (commit.parent_ids.length === 0) {
+          addToast('Cannot rebase: root commit has no parent', 'warning');
+          return;
+        }
+        const todoCommits = $commits.slice(0, idx + 1).slice().reverse();
+        $interactiveRebaseBaseCommitId = commit.parent_ids[0];
+        $interactiveRebaseInitialTodo = todoCommits.map((c) => ({ commit: c, action: 'pick' as const, message: null }));
+        $showInteractiveRebaseDialog = true;
       }},
       { label: 'Reset current branch to here', children: [
         { label: 'Soft (keep staged)', action: async () => {

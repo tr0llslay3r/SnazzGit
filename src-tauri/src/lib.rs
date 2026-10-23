@@ -4,9 +4,9 @@ mod recent;
 mod theme;
 
 use commands::{
-    blame, branches, clone, commits, config as config_cmd, conflict, credentials, diff, rebase,
-    reflog, recent as recent_cmd, remotes, repo, search, shell, stash, status, submodule, tags,
-    theme as theme_cmd, watcher as watcher_cmd,
+    blame, branches, clone, commits, config as config_cmd, conflict, credentials, diff,
+    interactive_rebase, rebase, reflog, recent as recent_cmd, remotes, repo, search, shell, stash,
+    status, submodule, tags, theme as theme_cmd, watcher as watcher_cmd,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -118,6 +118,11 @@ pub fn run() {
             rebase::rebase_abort,
             rebase::rebase_continue,
             rebase::squash_commits,
+            // Interactive rebase
+            interactive_rebase::start_interactive_rebase,
+            interactive_rebase::interactive_rebase_continue,
+            interactive_rebase::interactive_rebase_abort,
+            interactive_rebase::get_interactive_rebase_status,
             // Shell / OS integration
             shell::open_in_file_manager,
             shell::open_in_default_app,

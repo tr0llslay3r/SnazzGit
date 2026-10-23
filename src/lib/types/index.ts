@@ -183,3 +183,29 @@ export interface CredentialRequest {
   url?: string;
   clonePath?: string;
 }
+
+export type RebaseAction = 'pick' | 'reword' | 'edit' | 'squash' | 'fixup' | 'drop';
+
+export interface RebaseTodoItem {
+  commit_id: string;
+  action: RebaseAction;
+  message: string | null;
+}
+
+export type RebasePausedReason = 'conflict' | 'edit';
+
+export interface InteractiveRebaseStatus {
+  active: boolean;
+  total_steps: number;
+  completed_steps: number;
+  paused_reason: RebasePausedReason | null;
+  conflicted_files: string[] | null;
+}
+
+// UI-local composite row for the interactive rebase dialog's working state
+// (never sent over IPC directly — see RebaseTodoItem for the wire shape).
+export interface InteractiveRebaseRow {
+  commit: CommitInfo;
+  action: RebaseAction;
+  message: string | null;
+}

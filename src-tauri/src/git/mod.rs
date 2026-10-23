@@ -8,6 +8,7 @@ pub mod credentials;
 pub mod diff;
 pub mod error;
 pub mod graph;
+pub mod interactive_rebase;
 pub mod remote;
 pub mod repository;
 pub mod search;
