@@ -155,6 +155,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_load_commits_include_remote_flag_is_passed_through() {
+        let (_dir, path) = init_repo();
+        let base_oid = make_commit(&path, "Base commit");
+        let remote_only_oid = {
+            let repo = git2::Repository::open(&path).unwrap();
+            let base_commit = repo.find_commit(base_oid).unwrap();
+            let sig = git2::Signature::now("Test User", "test@test.com").unwrap();
+            let tree = base_commit.tree().unwrap();
+            let oid = repo
+                .commit(None, &sig, &sig, "Remote-only commit", &tree, &[&base_commit])
+                .unwrap();
+            repo.reference("refs/remotes/origin/feature-x", oid, true, "test")
+                .unwrap();
+            oid
+        };
+
+        let without_remote = load_commits(path.clone(), 100, 0, false).await.unwrap();
+        assert!(!without_remote.iter().any(|c| c.id == remote_only_oid.to_string()));
+
+        let with_remote = load_commits(path, 100, 0, true).await.unwrap();
+        assert!(with_remote.iter().any(|c| c.id == remote_only_oid.to_string()));
+    }
+
+    #[tokio::test]
     async fn test_load_commits_invalid_path() {
         let result = load_commits("/nonexistent/path".into(), 100, 0, false).await;
         assert!(result.is_err());
