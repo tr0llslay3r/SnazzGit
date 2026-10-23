@@ -13,6 +13,7 @@ pub mod repository;
 pub mod search;
 pub mod stash;
 pub mod status;
+pub mod submodule;
 pub mod rebase;
 pub mod reflog;
 pub mod tag;

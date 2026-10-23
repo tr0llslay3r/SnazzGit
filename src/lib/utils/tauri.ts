@@ -13,6 +13,7 @@ import type {
   Credentials,
   ReflogEntry,
   ConfigEntry,
+  SubmoduleInfo,
 } from '$lib/types';
 
 // CLI
@@ -213,6 +214,10 @@ export const setConfigEntry = (path: string, key: string, value: string) =>
 
 export const deleteConfigEntry = (path: string, key: string) =>
   invoke<void>('delete_config_entry', { path, key });
+
+// Submodules
+export const listSubmodules = (path: string) =>
+  invoke<SubmoduleInfo[]>('list_submodules', { path });
 
 // Reflog
 export const getReflog = (path: string, limit: number) =>

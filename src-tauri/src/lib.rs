@@ -5,7 +5,7 @@ mod theme;
 
 use commands::{
     blame, branches, clone, commits, config as config_cmd, conflict, credentials, diff, rebase,
-    reflog, recent as recent_cmd, remotes, repo, search, shell, stash, status, tags,
+    reflog, recent as recent_cmd, remotes, repo, search, shell, stash, status, submodule, tags,
     theme as theme_cmd, watcher as watcher_cmd,
 };
 
@@ -98,6 +98,8 @@ pub fn run() {
             config_cmd::get_config_entries,
             config_cmd::set_config_entry,
             config_cmd::delete_config_entry,
+            // Submodules
+            submodule::list_submodules,
             // Theme
             theme_cmd::load_user_themes,
             theme_cmd::save_user_theme,
